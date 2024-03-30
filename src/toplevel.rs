@@ -1,4 +1,6 @@
 use crate::*;
+use gray_matter::{Matter, Pod};
+use gray_matter::engine::YAML;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PDFLocation {
@@ -7,6 +9,7 @@ pub enum PDFLocation {
 
 #[derive(Debug, PartialEq)]
 pub enum TopLevelSyntax {
+    FrontMatter(Pod),
     LastUpdateDate(PmdDate),
     Banner(String),
     CodeBlock(String),
@@ -22,10 +25,6 @@ pub enum TopLevelSyntax {
     TOC(String),
     NotesTitle(String),
     BibliographyTitle(String),
-    PDFHeader(PDFLocation, String),
-    PDFFooter(PDFLocation, String),
-    PDFTextSize(usize),
-    PDFLineHeight(usize),
 }
 
 fn next_line(text: &str) -> &str {
@@ -114,45 +113,6 @@ fn is_meta(text: &str, check: &str) -> Option<usize> {
     }
 }
 
-fn is_pdf_meta(text: &str) -> Option<TopLevelSyntax> {
-    if let Some(n) = is_meta(text, "pdf-header-left") {
-        let text: String = text[n..].trim_start().into();
-        Some(TopLevelSyntax::PDFHeader(PDFLocation::Left, text))
-    } else if let Some(n) = is_meta(text, "pdf-header-center") {
-        let text: String = text[n..].trim_start().into();
-        Some(TopLevelSyntax::PDFHeader(PDFLocation::Center, text))
-    } else if let Some(n) = is_meta(text, "pdf-header-right") {
-        let text: String = text[n..].trim_start().into();
-        Some(TopLevelSyntax::PDFHeader(PDFLocation::Right, text))
-    } else if let Some(n) = is_meta(text, "pdf-footer-left") {
-        let text: String = text[n..].trim_start().into();
-        Some(TopLevelSyntax::PDFFooter(PDFLocation::Left, text))
-    } else if let Some(n) = is_meta(text, "pdf-footer-center") {
-        let text: String = text[n..].trim_start().into();
-        Some(TopLevelSyntax::PDFFooter(PDFLocation::Center, text))
-    } else if let Some(n) = is_meta(text, "pdf-footer-right") {
-        let text: String = text[n..].trim_start().into();
-        Some(TopLevelSyntax::PDFFooter(PDFLocation::Right, text))
-    }  else if let Some(n) = is_meta(text, "pdf-text-size") {
-        let text: String = text[n..].trim_start().into();
-        if let Ok(num) = text.parse::<usize>() {
-            Some(TopLevelSyntax::PDFTextSize(num))
-        } else {
-            None
-        }
-    } else if let Some(n) = is_meta(text, "pdf-line-height") {
-        let text: String = text[n..].trim_start().into();
-        if let Ok(num) = text.parse::<usize>() {
-            Some(TopLevelSyntax::PDFLineHeight(num))
-        } else {
-            None
-        }
-    } else {
-        None
-    }
-}
-
-
 fn try_parse_note(content: &str) -> Option<(String, String)> {
     if !content.starts_with("[") { return None }
     if !content[1..].trim_start().starts_with("^") { return None }
@@ -184,11 +144,19 @@ pub fn toplevel_parse_file(file_path: &String) -> Result<Vec<TopLevelSyntax>> {
 }
 
 pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
-    let mut content = file_content.clone();
+    let matter = Matter::<YAML>::new();
+    let frontmatter = matter.parse(file_content);
+
+    let mut content = frontmatter.content;
 
     let mut is_eating = false;
     let mut text = String::new();
     let mut toplevel_syntax = Vec::<TopLevelSyntax>::new();
+    
+    if let Some(data) = frontmatter.data {
+        toplevel_syntax.push(TopLevelSyntax::FrontMatter(data));
+    }
+
     while !content.is_empty() {
         let current = content.lines().nth(0).context("expected a line where there was none")?;
 
@@ -331,12 +299,6 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
         if let Some(n) = is_meta(current, "table-of-contents") {
             let text: String = current[n..].trim_start().into();
             toplevel_syntax.push(TopLevelSyntax::TOC(text));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-        
-        if let Some(syntax) = is_pdf_meta(current) {
-            toplevel_syntax.push(syntax);
             content = next_line(&content[current.len()..]).into();
             continue;
         }
@@ -485,63 +447,28 @@ mod tests {
     }
 
     #[test]
-    fn test_pdf_header_left() {
-        let text = "#[pdf-header-left] this is the header text".to_string();
-
+    fn test_frontmatter() {
+        let text = "---\ntest: text\n---".to_string();
         let result = toplevel_parse(&text);
         assert!(result.is_ok());
         let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::PDFHeader(PDFLocation::Left, "this is the header text".into())])
+        
+        assert_eq!(syntax, vec![TopLevelSyntax::FrontMatter(Pod::Hash(HashMap::from([("test".to_string(), Pod::String("text".to_string()))])))])
     }
     
     #[test]
-    fn test_pdf_header_right() {
-        let text = "#[pdf-header-right] this is the header text".to_string();
-
+    fn test_frontmatter_with_paragraph() {
+        let text = "---\ntest: text\n---\nhey there".to_string();
         let result = toplevel_parse(&text);
         assert!(result.is_ok());
         let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::PDFHeader(PDFLocation::Right, "this is the header text".into())])
-    }
-    
-    #[test]
-    fn test_pdf_header_center() {
-        let text = "#[pdf-header-center] this is the header text".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::PDFHeader(PDFLocation::Center, "this is the header text".into())])
-    }
-    
-    #[test]
-    fn test_pdf_footer_left() {
-        let text = "#[pdf-footer-left] this is the footer text".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::PDFFooter(PDFLocation::Left, "this is the footer text".into())])
-    }
-    
-    #[test]
-    fn test_pdf_footer_right() {
-        let text = "#[pdf-footer-right] this is the footer text".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::PDFFooter(PDFLocation::Right, "this is the footer text".into())])
-    }
-    
-    #[test]
-    fn test_pdf_footer_center() {
-        let text = "#[pdf-footer-center] this is the footer text".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::PDFFooter(PDFLocation::Center, "this is the footer text".into())])
+        
+        assert_eq!(syntax, 
+                   vec![
+                    TopLevelSyntax::FrontMatter(
+                        Pod::Hash(HashMap::from([("test".to_string(), Pod::String("text".to_string()))]))),
+                        TopLevelSyntax::Paragraph("hey there\n".to_string())
+                   ])
     }
     
     #[test]

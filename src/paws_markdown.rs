@@ -1,3 +1,5 @@
+use gray_matter::Pod;
+
 use crate::*;
 
 
@@ -10,34 +12,15 @@ pub struct TableOfContent {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct PDFInfo {
-    pub header: (String, String, String),
-    pub footer: (String, String, String),
-    pub text_size: Option<usize>,
-    pub line_height: Option<usize>,
-}
-
-impl PDFInfo {
-    fn new() -> Self {
-        Self { 
-            header: ("".into(), "".into(), "".into() ), 
-            footer: ("".into(), "".into(), "".into() ), 
-            text_size: None,
-            line_height: None,
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub struct BlogHeader {
     pub title: String,
     pub subtitle: String,
     pub banner: String,
     pub date: PmdDate,
-    pub pdf_info: PDFInfo,
     pub toc: Option<TableOfContent>,
     pub bibliography_title: String,
     pub notes_title: String,
+    pub frontmatter: Pod,
 }
 
 impl BlogHeader {
@@ -47,10 +30,10 @@ impl BlogHeader {
             subtitle: "".into(),
             banner: "".into(),
             date: PmdDate::None,
-            pdf_info: PDFInfo::new(),
             toc:      None,
             bibliography_title: "References".into(),
             notes_title: "Notes".into(),
+            frontmatter: Pod::Null,
         }
     }
 }
@@ -334,6 +317,9 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
     let mut body = Vec::<BlogBody>::new();
     for elem in &toplevel_syntax {
         match elem {
+            TopLevelSyntax::FrontMatter(data)   => {
+                header.frontmatter = data.clone();
+            }
             TopLevelSyntax::LastUpdateDate(date) => { header.date = date.clone(); },
             TopLevelSyntax::Subtitle(text)      => { header.subtitle = text.to_string();                                },
             TopLevelSyntax::Title(text)         => { header.title    = text.to_string();                                },
@@ -368,22 +354,6 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
             },
             TopLevelSyntax::NotesTitle(title) => { header.notes_title = title.clone(); },
             TopLevelSyntax::BibliographyTitle(title) => { header.bibliography_title = title.clone() },
-            TopLevelSyntax::PDFHeader(location, text) => {
-                match location {
-                    PDFLocation::Left   => { header.pdf_info.header.0 = text.clone()},
-                    PDFLocation::Center => { header.pdf_info.header.1 = text.clone()},
-                    PDFLocation::Right  => { header.pdf_info.header.2 = text.clone()},
-                }
-            },
-            TopLevelSyntax::PDFFooter(location, text) => {
-                match location {
-                    PDFLocation::Left   => { header.pdf_info.footer.0 = text.clone()},
-                    PDFLocation::Center => { header.pdf_info.footer.1 = text.clone()},
-                    PDFLocation::Right  => { header.pdf_info.footer.2 = text.clone()},
-                }
-            },
-            TopLevelSyntax::PDFTextSize(num) => { header.pdf_info.text_size = Some(*num); },
-            TopLevelSyntax::PDFLineHeight(num) => { header.pdf_info.line_height = Some(*num); },
         };
     }
 

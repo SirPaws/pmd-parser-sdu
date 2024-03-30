@@ -1,5 +1,6 @@
 use color_print::cprintln;
 use anyhow::anyhow;
+use gray_matter::Pod;
 use crate::*;
 use tempfile::Builder;
 use headless_chrome::Browser;
@@ -47,30 +48,39 @@ impl PMDPDFSerializer {
         }
     } 
 
-    fn parse_pdf_string(text: &String) -> String {
-        let mut text = text.clone();
-        text.insert(0, '"');
-        text.push('"');
-        text = text.replace("%pages", "\"counter(pages)\"");
-        text = text.replace("%page", "\"counter(page)\"");
-        text = text.replace("%np", "\"counter(pages)\"");
-        text = text.replace("%p",  "\"counter(page)\"");
-        if text.len() == 0 { text = "none".to_string(); }
-        text
+    fn parse_pdf_string(text: &Pod) -> String {
+        if let Ok(text) = text.as_string() {
+            let mut text = text.clone();
+            text.insert(0, '"');
+            text.push('"');
+            text = text.replace("%pages", "\"counter(pages)\"");
+            text = text.replace("%page", "\"counter(page)\"");
+            text = text.replace("%np", "\"counter(pages)\"");
+            text = text.replace("%p",  "\"counter(page)\"");
+            if text.len() == 0 { text = "none".to_string(); }
+            text
+        } else { "".to_string() }
     }
 
-    fn prepare_header(&mut self, info: &PDFInfo, max_depth: usize, title: &String, description: &String) -> String {
+    fn prepare_header(&mut self, frontmatter: &Pod, max_depth: usize, title: &String, description: &String) -> String {
         let mut output = String::new();
-        let top_left   = Self::parse_pdf_string(&info.header.0);
-        let top_center = Self::parse_pdf_string(&info.header.1);
-        let top_right  = Self::parse_pdf_string(&info.header.2);
+        let top_left   = Self::parse_pdf_string(&frontmatter["pdf-header-left"]  );
+        let mut top_center = Self::parse_pdf_string(&frontmatter["pdf-header-center"]);
+        let top_right  = Self::parse_pdf_string(&frontmatter["pdf-header-left"]  );
 
-        let bottom_left   = Self::parse_pdf_string(&info.footer.0);
-        let bottom_center = Self::parse_pdf_string(&info.footer.1);
-        let bottom_right  = Self::parse_pdf_string(&info.footer.2);
+        let bottom_left   = Self::parse_pdf_string(&frontmatter["pdf-footer-left"]  );
+        let mut bottom_center = Self::parse_pdf_string(&frontmatter["pdf-footer-center"]);
+        let bottom_right  = Self::parse_pdf_string(&frontmatter["pdf-footer-left"]  );
 
-        let text_size   = info.text_size;
-        let line_height = info.line_height;
+        if top_center == "" {
+            top_center = Self::parse_pdf_string(&frontmatter["pdf-header"]);
+        }
+        if bottom_center == "" {
+            bottom_center = Self::parse_pdf_string(&frontmatter["pdf-footer"]);
+        }
+
+        let text_size   = frontmatter["pdf-text-size"].as_i64();
+        let line_height = frontmatter["pdf-line-height"].as_i64();
 
         output += "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n";
         output += "\n";
@@ -86,10 +96,10 @@ impl PMDPDFSerializer {
         output += "<style>\n";
         output += "main {\n";
         output += "    font-family: 'Atkinson Hyperlegible', sans-serif;\n";
-        if let Some(text_size) = text_size {
+        if let Ok(text_size) = text_size {
             output += format!("    font-size: {text_size}pt;\n").as_str();
         }
-        if let Some(line_height) = line_height {
+        if let Ok(line_height) = line_height {
             output += format!("    line-height: {line_height};\n").as_str();
         }
         output += "}\n";
@@ -488,7 +498,7 @@ impl PMDSerializer for PMDPDFSerializer {
             max_depth = toc.max_depth;
         }
 
-        let header = self.prepare_header(&md.header.pdf_info, max_depth, &md.header.title, &description);
+        let header = self.prepare_header(&md.header.frontmatter, max_depth, &md.header.title, &description);
 
         output +=   "<!doctype html>\n";
         output +=   "<html>\n";
