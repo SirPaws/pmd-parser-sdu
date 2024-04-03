@@ -5,6 +5,7 @@ pub fn explain(feature: &Option<String>) {
         println!("    [Feature]");
         println!();
         println!("Features:");      
+        println!("    frontmatter           ---");
         println!("    title                 #[title] title text here");
         println!("    subtitle              #[subtitle] subtitle text here");
         println!("    banner                #[banner] path/to/banner");
@@ -12,8 +13,6 @@ pub fn explain(feature: &Option<String>) {
         println!("    notes-title           #[notes-title] New title");
         println!("    bibliography-title    #[bibliography-title] New title");
         println!("    toc                   #[toc] table of contents title here");
-        println!("    pdf-header            #[pdf-header-left] text on the left");
-        println!("    pdf-footer            #[pdf-footer-left] text on the left");
         println!("    image                 [[path/to/image] alt text here]");
         println!("    header                # header text here");
         println!("    codeblock             ```lang_name\\n text here ```");
@@ -27,39 +26,73 @@ pub fn explain(feature: &Option<String>) {
     
     if let Some(feature) = feature {
         match feature.to_lowercase().as_str() {
+            "frontmatter" => {
+                println!("Frontmatter:");
+                println!("    Frontmatter is a way to store meta information about the file");
+                println!("    currently this is only used for pdf files, but in the future");
+                println!("    more might be supported.");
+                println!();
+                println!("    As the name implies, frontmatter is always at the front");
+                println!("    (i.e. the top) of the file, and is formatted as YAML.");
+                println!();
+                println!("    the only items that will be looked for are");
+                println!("    - pdf-text-size");
+                println!("    - pdf-header-left");
+                println!("    - pdf-header-center");
+                println!("    - pdf-header-right");
+                println!("    - pdf-header");
+                println!("    - pdf-footer-left");
+                println!("    - pdf-footer-center");
+                println!("    - pdf-footer-right");
+                println!("    - pdf-footer");
+                println!("Example: ");
+                println!("    To make a frontmatter section you wrap it with three dashes");
+                println!();
+                println!("    ---");
+                println!("    item: this is frontmatter");
+                println!("    ---");
+                println!();
+                println!("Note: ");
+                println!("    the key's 'pdf-header' and 'pdf-footer' are equivalent to");
+                println!("    'pdf-header-center' and 'pdf-footer-center', having");
+                println!("    both will ignore the short versions");
+            },
             "title" | "titles"    => {
                 println!("Titles:");
-                println!("    a title is a special kind of header,");
+                println!("    A title is a special kind of header,");
                 println!("    which is considered a level above all other headers.");
                 println!();
                 println!("Example: ");
-                println!("    to write it, you use the symbol #[title]");
+                println!("    To write it, you use the symbol #[title]");
                 println!();
                 println!("    #[title] WoW what a title!");
                 println!();
                 println!("Note: ");
-                println!("    the beginning whitespace between #[title] and the first");
+                println!("    The beginning whitespace between #[title] and the first");
                 println!("    character will be removed");
             },
             "subtitle" | "subtitles" => {
                 println!("Subtitles:");
-                println!("    a subtitle is a special kind of header,");
+                println!("    A subtitle is a special kind of header,");
                 println!("    which is considered a level above all other headers");
                 println!("    except for titles.");
                 println!();
                 println!("Example: ");
-                println!("    to write it, you use the symbol #[subtitle]");
+                println!("    To write it, you use the symbol #[subtitle]");
                 println!();
                 println!("    #[subtitle] WoW what a subtitle!");
                 println!();
                 println!("Note: ");
-                println!("    the beginning whitespace between #[subtitle] and the first");
-                println!("    character will be removed");
+                println!("    The beginning whitespace between #[subtitle] and the first");
+                println!("    character will be removed.");
+                println!();
+                println!("    Currently subtitles are used in rss for dates.");
+                //TODO: dates should be part of frontmatter
     
             },
             "banner" | "banners" => {
-                println!("Banners:");
-                println!("    banners are used when the page is embedded somewhere else,");
+                println!("Banners:"); //TODO: this should be part of the frontmatter
+                println!("    Banners are used when the page is embedded somewhere else,");
                 println!("    like on twitter, or discord, #[banner] let's you specify ");
                 println!("    where the picture for the banner is located");
                 println!();
@@ -67,7 +100,7 @@ pub fn explain(feature: &Option<String>) {
                 println!("    #[banner] first-blog-images/banner.png");
                 println!();
                 println!("Note: ");
-                println!("    the beginning whitespace between #[banner] and the first");
+                println!("    The beginning whitespace between #[banner] and the first");
                 println!("    character will be removed");
             },
             "image" | "images" => {
@@ -83,7 +116,8 @@ pub fn explain(feature: &Option<String>) {
                 println!("Headers:");
                 println!();
                 println!("Example: ");
-                println!("    # a level 1 header");
+                println!("    #  A level 1 header");
+                println!("    ## A level 2 header");
                 println!();
                 println!("Note: ");
                 println!();
