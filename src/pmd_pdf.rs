@@ -272,7 +272,7 @@ impl PMDPDFSerializer {
             for c in text.chars() {
                 if c.is_ascii_punctuation() { 
                     break
-                } else { len += 1 }
+                } else { len += c.len_utf8() }
             }
             if len == 0 || text[0..len].trim_start().trim_end().len() == 0 { default_generator() } else {
                 let mut result = String::new();
