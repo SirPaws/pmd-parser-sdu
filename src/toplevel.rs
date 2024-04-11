@@ -1,6 +1,4 @@
 use crate::*;
-use gray_matter::{Matter, Pod};
-use gray_matter::engine::YAML;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum PDFLocation {
@@ -9,22 +7,22 @@ pub enum PDFLocation {
 
 #[derive(Debug, PartialEq)]
 pub enum TopLevelSyntax {
-    FrontMatter(Pod),
-    LastUpdateDate(PmdDate),
-    Banner(String),
+    FrontMatter(Frontmatter),
+//  LastUpdateDate(PmdDate),
+//  Banner(String),
     CodeBlock(String),
     Header(String, usize),
     Image(String, String),
     List(Vec<String>),
     Paragraph(String),
     Quote(Vec<String>),
-    Subtitle(String),
-    Title(String),
+//  Subtitle(String),
+//  Title(String),
     ReferenceDefinition(ReferenceDefinition),
     NoteDefinition{id: String, text: String},
     TOC(String),
-    NotesTitle(String),
-    BibliographyTitle(String),
+//  NotesTitle(String),
+//  BibliographyTitle(String),
 }
 
 fn next_line(text: &str) -> &str {
@@ -144,17 +142,17 @@ pub fn toplevel_parse_file(file_path: &String) -> Result<Vec<TopLevelSyntax>> {
 }
 
 pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
-    let matter = Matter::<YAML>::new();
-    let frontmatter = matter.parse(file_content);
+    // let matter = Matter::<YAML>::new();
+    let (frontmatter, content) = parse_frontmatter(&file_content);
 
-    let mut content = frontmatter.content;
+    let mut content = content.to_string();
 
     let mut is_eating = false;
     let mut text = String::new();
     let mut toplevel_syntax = Vec::<TopLevelSyntax>::new();
     
-    if let Some(data) = frontmatter.data {
-        toplevel_syntax.push(TopLevelSyntax::FrontMatter(data));
+    if let Some(frontmatter) = frontmatter {
+        toplevel_syntax.push(TopLevelSyntax::FrontMatter(frontmatter));
     }
 
     while !content.is_empty() {
@@ -233,54 +231,54 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             continue;
         }
 
-        if let Some(n) = is_meta(current, "title") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::Title(text));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-        
-        if let Some(n) = is_meta(current, "subtitle") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::Subtitle(text));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-        
-        if let Some(n) = is_meta(current, "banner") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::Banner(text));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-
-        if let Some(n) = is_meta(current, "last-update") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::LastUpdateDate(PmdDate::String(text)));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-        
-        if let Some(n) = is_meta(current, "last-updated") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::LastUpdateDate(PmdDate::String(text)));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-        
-        if let Some(n) = is_meta(current, "notes-title") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::NotesTitle(text));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
-        
-        if let Some(n) = is_meta(current, "bibliography-title") {
-            let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::BibliographyTitle(text));
-            content = next_line(&content[current.len()..]).into();
-            continue;
-        }
+        // if let Some(n) = is_meta(current, "title") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::Title(text));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
+        // 
+        // if let Some(n) = is_meta(current, "subtitle") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::Subtitle(text));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
+        // 
+        // if let Some(n) = is_meta(current, "banner") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::Banner(text));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
+        // 
+        // if let Some(n) = is_meta(current, "last-update") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::LastUpdateDate(PmdDate::String(text)));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
+        // 
+        // if let Some(n) = is_meta(current, "last-updated") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::LastUpdateDate(PmdDate::String(text)));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
+        // 
+        // if let Some(n) = is_meta(current, "notes-title") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::NotesTitle(text));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
+        // 
+        // if let Some(n) = is_meta(current, "bibliography-title") {
+        //     let text: String = current[n..].trim_start().into();
+        //     toplevel_syntax.push(TopLevelSyntax::BibliographyTitle(text));
+        //     content = next_line(&content[current.len()..]).into();
+        //     continue;
+        // }
         
         if let Some(n) = is_meta(current, "toc") {
             let text: String = current[n..].trim_start().into();
@@ -416,120 +414,120 @@ mod tests {
         assert_eq!(syntax, vec![TopLevelSyntax::Paragraph("hello world\n".into())])
     }
     
-    #[test]
-    fn test_title() {
-        let text = "#[title] this is a title".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::Title("this is a title".into())])
-    }
+    // #[test]
+    // fn test_title() {
+    //     let text = "#[title] this is a title".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::Title("this is a title".into())])
+    // }
     
-    #[test]
-    fn test_meta_whitespace() {
-        let text = "#[      title  ] this is a title".to_string();
+    // #[test]
+    // fn test_meta_whitespace() {
+    //     let text = "#[      title  ] this is a title".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::Title("this is a title".into())])
+    // }
+    // 
+    // #[test]
+    // fn test_subtitle() {
+    //     let text = "#[subtitle] this is a subtitle".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::Subtitle("this is a subtitle".into())])
+    // }
 
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::Title("this is a title".into())])
-    }
-
-    #[test]
-    fn test_subtitle() {
-        let text = "#[subtitle] this is a subtitle".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::Subtitle("this is a subtitle".into())])
-    }
-
-    #[test]
-    fn test_frontmatter() {
-        let text = "---\ntest: text\n---".to_string();
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        
-        assert_eq!(syntax, vec![TopLevelSyntax::FrontMatter(Pod::Hash(HashMap::from([("test".to_string(), Pod::String("text".to_string()))])))])
-    }
+    // #[test]
+    // fn test_frontmatter() {
+    //     let text = "---\ntest: text\n---".to_string();
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     
+    //     assert_eq!(syntax, vec![TopLevelSyntax::FrontMatter(Pod::Hash(HashMap::from([("test".to_string(), Pod::String("text".to_string()))])))])
+    // }
+    // 
+    // #[test]
+    // fn test_frontmatter_with_paragraph() {
+    //     let text = "---\ntest: text\n---\nhey there".to_string();
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     
+    //     assert_eq!(syntax, 
+    //                vec![
+    //                 TopLevelSyntax::FrontMatter(
+    //                     Pod::Hash(HashMap::from([("test".to_string(), Pod::String("text".to_string()))]))),
+    //                     TopLevelSyntax::Paragraph("hey there\n".to_string())
+    //                ])
+    // }
     
-    #[test]
-    fn test_frontmatter_with_paragraph() {
-        let text = "---\ntest: text\n---\nhey there".to_string();
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        
-        assert_eq!(syntax, 
-                   vec![
-                    TopLevelSyntax::FrontMatter(
-                        Pod::Hash(HashMap::from([("test".to_string(), Pod::String("text".to_string()))]))),
-                        TopLevelSyntax::Paragraph("hey there\n".to_string())
-                   ])
-    }
+    // #[test]
+    // fn test_notes_title_dash() {
+    //     let text = "#[notes-title] Notes".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::NotesTitle("Notes".into())])
+    // }
+    // 
+    // #[test]
+    // fn test_notes_title_space() {
+    //     let text = "#[notes title] Notes".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::NotesTitle("Notes".into())])
+    // }
     
-    #[test]
-    fn test_notes_title_dash() {
-        let text = "#[notes-title] Notes".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::NotesTitle("Notes".into())])
-    }
-
-    #[test]
-    fn test_notes_title_space() {
-        let text = "#[notes title] Notes".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::NotesTitle("Notes".into())])
-    }
-    
-    #[test]
-    fn test_notes_title_dot() {
-        let text = "#[notes.title] Notes".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::NotesTitle("Notes".into())])
-    }
-    
-    #[test]
-    fn test_bibliography_title() {
-        let text = "#[bibliography-title] Refs".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::BibliographyTitle("Refs".into())])
-    }
-    
-    #[test]
-    fn test_last_update() {
-        let text = "#[last-update] Refs".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::LastUpdateDate(PmdDate::String("Refs".into()))])
-    }
-    
-    #[test]
-    fn test_last_update_alternate_spelling() {
-        let text = "#[last-updated] Refs".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::LastUpdateDate(PmdDate::String("Refs".into()))])
-    }
+    // #[test]
+    // fn test_notes_title_dot() {
+    //     let text = "#[notes.title] Notes".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::NotesTitle("Notes".into())])
+    // }
+    // 
+    // #[test]
+    // fn test_bibliography_title() {
+    //     let text = "#[bibliography-title] Refs".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::BibliographyTitle("Refs".into())])
+    // }
+    // 
+    // #[test]
+    // fn test_last_update() {
+    //     let text = "#[last-update] Refs".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::LastUpdateDate(PmdDate::String("Refs".into()))])
+    // }
+    // 
+    // #[test]
+    // fn test_last_update_alternate_spelling() {
+    //     let text = "#[last-updated] Refs".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::LastUpdateDate(PmdDate::String("Refs".into()))])
+    // }
     
     #[test]
     fn test_toc() {
@@ -561,15 +559,15 @@ mod tests {
         assert_eq!(syntax, vec![TopLevelSyntax::TOC("Refs".into())])
     }
     
-    #[test]
-    fn test_banner() {
-        let text = "#[banner] this/banner/path.png".to_string();
-
-        let result = toplevel_parse(&text);
-        assert!(result.is_ok());
-        let syntax = result.unwrap();
-        assert_eq!(syntax, vec![TopLevelSyntax::Banner("this/banner/path.png".into())])
-    }
+    // #[test]
+    // fn test_banner() {
+    //     let text = "#[banner] this/banner/path.png".to_string();
+    // 
+    //     let result = toplevel_parse(&text);
+    //     assert!(result.is_ok());
+    //     let syntax = result.unwrap();
+    //     assert_eq!(syntax, vec![TopLevelSyntax::Banner("this/banner/path.png".into())])
+    // }
 
     #[test]
     fn test_header() {

@@ -1,9 +1,11 @@
 #![feature(let_chains)]
 #![feature(box_into_inner)]
 #![feature(string_remove_matches)]
+#![feature(box_patterns)]
 use std::{collections::HashMap, fs};
 use anyhow::{Context, Result};
 
+mod frontmatter;
 mod references;
 mod explain;
 mod toplevel;
@@ -17,6 +19,7 @@ mod pmd_rss;
 #[cfg(feature = "pdf")]
 mod pmd_pdf;
 
+use frontmatter::*;
 use references::*;
 use toplevel::*;
 use paws_markdown::*;

@@ -1,7 +1,8 @@
-use gray_matter::Pod;
+use color_print::cprintln;
+use serde_yaml::Value;
+// use gray_matter::Pod;
 
 use crate::*;
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct TableOfContent {
@@ -16,11 +17,12 @@ pub struct BlogHeader {
     pub title: String,
     pub subtitle: String,
     pub banner: String,
-    pub date: PmdDate,
+    pub date_written: PmdDate,
+    pub last_update: PmdDate,
     pub toc: Option<TableOfContent>,
     pub bibliography_title: String,
     pub notes_title: String,
-    pub frontmatter: Pod,
+    pub frontmatter: Option<Frontmatter>,
 }
 
 impl BlogHeader {
@@ -29,11 +31,12 @@ impl BlogHeader {
             title: "".into(),
             subtitle: "".into(),
             banner: "".into(),
-            date: PmdDate::None,
+            date_written: PmdDate::None,
+            last_update: PmdDate::None,
             toc:      None,
             bibliography_title: "References".into(),
             notes_title: "Notes".into(),
-            frontmatter: Pod::Null,
+            frontmatter: None,
         }
     }
 }
@@ -308,6 +311,62 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
     }
 }
 
+fn get_date(data: &Frontmatter) -> Option<String> {
+    if let Some(date) = data["date"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["date-written"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["date_written"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["date written"].as_string() {
+        Some(date)
+    } else {
+        None
+    }
+}
+
+fn get_last_update(data: &Frontmatter) -> Option<String> {
+    if let Some(date) = data["last-update"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["last_update"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["last update"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["last-updated"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["last_updated"].as_string() {
+        Some(date)
+    } else if let Some(date) = data["last updated"].as_string() {
+        Some(date)
+    } else {
+        None
+    }
+}
+
+fn get_bibliography_title(data: &Frontmatter) -> Option<String> {
+    if let Some(title) = data["bibliography-title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["references-title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["sources-title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["bibliography title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["references title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["sources title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["bibliography_title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["references_title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["sources_title"].as_string() {
+        Some(title)
+    } else {
+        None
+    }
+}
+
 pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
     let toplevel_syntax = toplevel_parse_file(file_path)?; 
 
@@ -317,13 +376,14 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
     let mut body = Vec::<BlogBody>::new();
     for elem in &toplevel_syntax {
         match elem {
-            TopLevelSyntax::FrontMatter(data)   => {
-                header.frontmatter = data.clone();
+            TopLevelSyntax::FrontMatter(frontmatter) => { // (data)   => {
+                header.frontmatter = Some(frontmatter.clone());
+                // println!("FRONTMATTER!!! {:?}", data);
             }
-            TopLevelSyntax::LastUpdateDate(date) => { header.date = date.clone(); },
-            TopLevelSyntax::Subtitle(text)      => { header.subtitle = text.to_string();                                },
-            TopLevelSyntax::Title(text)         => { header.title    = text.to_string();                                },
-            TopLevelSyntax::Banner(text)        => { header.banner   = text.to_string();                                },
+            // TopLevelSyntax::LastUpdateDate(date) => { header.date = date.clone(); },
+            // TopLevelSyntax::Subtitle(text)      => { header.subtitle = text.to_string();                                },
+            // TopLevelSyntax::Title(text)         => { header.title    = text.to_string();                                },
+            // TopLevelSyntax::Banner(text)        => { header.banner   = text.to_string();                                },
             TopLevelSyntax::CodeBlock(block)    => { body.push(BlogBody::CodeBlock(block.to_string()));            },
             TopLevelSyntax::Image(img, alt)     => { body.push(BlogBody::Image(img.to_string(), alt.to_string())); },
             TopLevelSyntax::Header(text, level) => { body.push(BlogBody::Header(text_parse(&text)?, *level));      },
@@ -352,8 +412,8 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
                     body.push(BlogBody::TOCLocationMarker);
                 }
             },
-            TopLevelSyntax::NotesTitle(title) => { header.notes_title = title.clone(); },
-            TopLevelSyntax::BibliographyTitle(title) => { header.bibliography_title = title.clone() },
+            // TopLevelSyntax::NotesTitle(title) => { header.notes_title = title.clone(); },
+            // TopLevelSyntax::BibliographyTitle(title) => { header.bibliography_title = title.clone() },
         };
     }
 
@@ -376,6 +436,42 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
         if references.len() > 0 {
             toc.headers.push((Box::new(BlogBody::Text(header.bibliography_title.clone())), 1))
         }
+    }
+
+    if let Some(frontmatter) = &header.frontmatter {
+        if let Some(title) = frontmatter["title"].as_string() {
+            header.title = title;
+        } else {
+            cprintln!("<r>error:</> Document '{}' is missing a title, see 'pmd explain frontmatter'", file_path);
+        }
+        
+        if let Some(subtitle) = frontmatter["subtitle"].as_string() {
+            header.subtitle = subtitle;
+        }
+        
+        if let Some(banner) = frontmatter["banner"].as_string() {
+            header.banner = banner;
+        }
+        
+        if let Some(title) = frontmatter["notes-title"].as_string() {
+            header.notes_title = title;
+        }
+
+        if let Some(title) = get_bibliography_title(frontmatter) {
+            header.bibliography_title = title;
+        }
+
+        if let Some(date) = get_date(frontmatter) {
+            header.date_written = PmdDate::String(date);
+        } else {
+            cprintln!("<r>error:</> Document '{}' is missing a date, see 'pmd explain frontmatter'", file_path);
+        }
+        
+        if let Some(update) = get_last_update(frontmatter) {
+            header.last_update = PmdDate::String(update);
+        }
+    } else {
+        cprintln!("<r>error:</> Document '{}' is missing frontmatter, see 'pmd explain frontmatter'", file_path);
     }
 
     Ok(PawsMarkdown { header, references, notes, body })

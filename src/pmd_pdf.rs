@@ -1,10 +1,10 @@
 use color_print::cprintln;
 use anyhow::anyhow;
-use gray_matter::Pod;
 use crate::*;
 use tempfile::Builder;
 use headless_chrome::Browser;
 use std::io::Write;
+use serde_yaml::Value;
 
 struct Reference {
     def: ReferenceDefinition,
@@ -48,8 +48,8 @@ impl PMDPDFSerializer {
         }
     } 
 
-    fn parse_pdf_string(text: &Pod) -> String {
-        if let Ok(text) = text.as_string() {
+    fn parse_pdf_string(text: &Value) -> String {
+        if let Some(text) = text.as_string() {
             let mut text = text.clone();
             text.insert(0, '"');
             text.push('"');
@@ -59,11 +59,14 @@ impl PMDPDFSerializer {
             text = text.replace("%p",  "\"counter(page)\"");
             if text.len() == 0 { text = "none".to_string(); }
             text
-        } else { "".to_string() }
+        } else { "none".to_string() }
     }
 
-    fn prepare_header(&mut self, frontmatter: &Pod, max_depth: usize, title: &String, description: &String) -> String {
+    fn prepare_header(&mut self, frontmatter: &Option<Frontmatter>, max_depth: usize, title: &String, description: &String) -> String {
         let mut output = String::new();
+
+        let frontmatter = frontmatter.clone().unwrap_or(Frontmatter::new());
+
         let top_left   = Self::parse_pdf_string(&frontmatter["pdf-header-left"]  );
         let mut top_center = Self::parse_pdf_string(&frontmatter["pdf-header-center"]);
         let top_right  = Self::parse_pdf_string(&frontmatter["pdf-header-left"]  );
@@ -96,10 +99,10 @@ impl PMDPDFSerializer {
         output += "<style>\n";
         output += "main {\n";
         output += "    font-family: 'Atkinson Hyperlegible', sans-serif;\n";
-        if let Ok(text_size) = text_size {
+        if let Some(text_size) = text_size {
             output += format!("    font-size: {text_size}pt;\n").as_str();
         }
-        if let Ok(line_height) = line_height {
+        if let Some(line_height) = line_height {
             output += format!("    line-height: {line_height};\n").as_str();
         }
         output += "}\n";
@@ -695,6 +698,7 @@ impl PMDSerializer for PMDPDFSerializer {
 
         writeln!(html, "{}", output)?;
         let path = html.path().to_str().expect("could not convert parth to &str");
+        std::fs::write("tmp.html", output)?;
 
         let browser = Browser::default()?;
         let tab = browser.new_tab()?;

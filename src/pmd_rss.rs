@@ -170,12 +170,17 @@ impl PMDSerializer for PMDRSSSerializer {
         }
 
         let filename = self.filename.clone();
-        let date = md.header.date.to_date().unwrap_or(chrono::Utc::now());
+        let date = if md.header.last_update.is_not_none() {
+                md.header.last_update.to_date().unwrap_or(chrono::Utc::now())
+            } else {
+                md.header.date_written.to_date().unwrap_or(chrono::Utc::now())
+            }.to_rfc3339();
+
         self.push_line("<entry>\n");
         self.push_tab();
         self.push_line(format!("<title>{title}</title>"));
         self.push_line(format!("<link href=\"https://sirpaws.dev/blog/{filename}\"/>"));
-        self.push_line(format!("<updated>{}</updated>", date.to_rfc3339()));
+        self.push_line(format!("<updated>{date}</updated>"));
         self.push_line(format!("<id>https://sirpaws.dev/blog/{filename}</id>"));
         self.push_line("<content type=\"xhtml\">");
 
