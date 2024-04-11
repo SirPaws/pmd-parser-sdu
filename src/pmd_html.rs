@@ -124,7 +124,7 @@ impl PMDHTMLSerializer {
         if banner.len() > 0 {
             output += format!("<meta property=\"twitter:image\" content=\"https://sirpaws.dev/blog/{}\">\n", banner).as_str();
         } else {
-            output += "<meta property=\"twitter:image\" content=\"https://sirpaws.dev/data/minibanner.png\"> -->\n";
+            output += "<meta property=\"twitter:image\" content=\"https://sirpaws.dev/data/minibanner.png\">\n";
         }
         output += "\n";
         output += "<!-- stylesheets -->\n";
