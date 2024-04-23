@@ -875,9 +875,12 @@ impl PMDSerializer for PMDHTMLSerializer {
             let num = reference.times_used;
             reference.times_used += 1;
             let text = to_citation(&reference.def);
-            let mut result = format!("<a id='{id}-{num}' href='#{id}' onclick='backref(\"{id}\", \"{id}-{num}\")'>").to_string();
+            let mut result = String::new();
+            result += "<cite>";
+            result += format!("<a id='{id}-{num}' href='#{id}' onclick='backref(\"{id}\", \"{id}-{num}\")'>").as_str();
             result += text.as_str();
             result += "</a>";
+            result += "</cite>";
             Ok(result)
         } else {
             cprintln!("<y>warning:</> {} has no source", id);

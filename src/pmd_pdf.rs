@@ -880,9 +880,12 @@ impl PMDSerializer for PMDPDFSerializer {
         if let Some(reference) = self.references.get_mut(id) {
             reference.times_used += 1;
             let text = to_citation(&reference.def);
-            let mut result = format!("<a href='#{id}'>").to_string();
+            let mut result = self.tab();
+            result += "<cite>";
+            result += format!("<a href='#{id}'>").as_str();
             result += text.as_str();
             result += "</a>";
+            result += "</cite>";
             Ok(result)
         } else {
             cprintln!("<y>warning:</> {} has no source", id);
