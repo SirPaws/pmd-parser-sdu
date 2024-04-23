@@ -141,6 +141,32 @@ pub fn toplevel_parse_file(file_path: &String) -> Result<Vec<TopLevelSyntax>> {
     toplevel_parse(&fs::read_to_string(file_path)?)
 }
 
+fn remove_comments(text: &String) -> String {
+
+    let full_text = text;
+    let mut text = &text[..];
+    let mut result = String::new();
+    while let Some(index) = text.find("%%") {
+        if (!text[(index + 2)..].contains("%%")) && (result.len() == 0) {
+            return full_text.clone();
+        }
+        result += &text[..index];
+        if let Some(end_index) = (&text[(index + 2)..]).find("%%") {
+            text = &(&text[(index + 2)..])[(end_index + 2)..];
+            continue;
+        } else {
+            result += &text[index..];
+            break;
+        }
+    }
+
+    if text.len() > 0 {
+        result += text;
+    }
+
+    result
+}
+
 pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
     // let matter = Matter::<YAML>::new();
     let (frontmatter, content) = parse_frontmatter(&file_content);
@@ -379,6 +405,16 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
         toplevel_syntax.push(TopLevelSyntax::Paragraph(text));
     }
 
+    for element in &mut toplevel_syntax {
+        match element {
+            TopLevelSyntax::Paragraph(text) => {
+                if !text.contains("%%") { continue }
+                *text = remove_comments(text);
+            }
+            _ => { continue }
+        }
+    }
+
 
     Ok(toplevel_syntax)
 }
@@ -412,6 +448,36 @@ mod tests {
         assert!(result.is_ok());
         let syntax = result.unwrap();
         assert_eq!(syntax, vec![TopLevelSyntax::Paragraph("hello world\n".into())])
+    }
+
+    #[test]
+    fn test_remove_paragraph_comment_start() {
+        let text = "%%this is a comment that will be removed%%this won't be removed".to_string();
+
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![TopLevelSyntax::Paragraph("this won't be removed\n".into())])
+    }
+    
+    #[test]
+    fn test_remove_paragraph_comment_middle() {
+        let text = "Hi %%this is a comment that will be removed%% this won't be removed".to_string();
+
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![TopLevelSyntax::Paragraph("Hi  this won't be removed\n".into())])
+    }
+    
+    #[test]
+    fn test_remove_paragraph_comment_end() {
+        let text = "this won't be removed%%this is a comment that will be removed%%".to_string();
+
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![TopLevelSyntax::Paragraph("this won't be removed\n".into())])
     }
     
     // #[test]
