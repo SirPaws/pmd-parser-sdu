@@ -214,7 +214,7 @@ pub struct ReferenceDefinition {
 
 fn peek_next_token(content: &str) -> Option<String> {
     let mut text : String = "".into();
-    let mut peekable_content = content.chars().peekable();
+    let mut peekable_content = content.trim_start().chars().peekable();
     while let Some(character) = peekable_content.peek(){
         if character.is_whitespace() && text.len() == 0{
             peekable_content.next();
@@ -224,7 +224,7 @@ fn peek_next_token(content: &str) -> Option<String> {
         }
 
         match character {
-            &':' | &'{' | &'}' | &',' => {
+            &':' | &'{' | &'}' | &',' | &'[' | &']' => {
                 if text.len() > 0 {
                     break;
                 } else {
@@ -392,9 +392,18 @@ pub fn parse_reference(content: String) -> Result<ReferenceDefinition> {
                         }
                     },
                     "author"           => {
-                        let author;
-                        (buf, author) = parse_ref_variable(&buf);
-                        reference.authors.push(author);
+                        if let Some(token) = peek_next_token(&buf) && token == "[" {
+                            // the user likely spelled 'author' but meant 'authors'
+                            let authors;
+                            (buf, authors) = parse_ref_array(&buf);
+                            for author in authors {
+                                reference.authors.push(author);
+                            }
+                        } else {
+                            let author;
+                            (buf, author) = parse_ref_variable(&buf);
+                            reference.authors.push(author);
+                        }
                     },
                     "editors"           => {
                         let editors;
@@ -557,16 +566,30 @@ pub fn to_citation(value: &ReferenceDefinition) -> String {
     
     let mut result : String = "(".to_string();
     if value.authors.len() == 0 { return "(INVALID REFERENCE)".to_string() }
-    if value.authors.len() == 1 {
-        let author = value.authors[0].clone();
-        let split_name : Vec<_> = author.split_whitespace().collect();
-        result += split_name.last().unwrap();
-        result += ", "; 
-    } else {
-        let author = value.authors[0].clone();
-        let split_name : Vec<_> = author.split_whitespace().collect();
-        result += split_name.last().unwrap();
-        result += " et al., "; 
+    match value.authors.len() {
+        1 => {
+            let author = value.authors[0].clone();
+            let split_name : Vec<_> = author.split_whitespace().collect();
+            result += split_name.last().unwrap();
+            result += ", "; 
+        },
+        2 => {
+            let first_author  = value.authors[0].clone();
+            let second_author = value.authors[1].clone();
+            let first_author_split_name : Vec<_>  = first_author.split_whitespace().collect();
+            let second_author_split_name : Vec<_> = second_author.split_whitespace().collect();
+            result += first_author_split_name.last().unwrap();
+            result += " & "; 
+            result += second_author_split_name.last().unwrap();
+            result += ", "; 
+
+        },
+        _ => {
+            let author = value.authors[0].clone();
+            let split_name : Vec<_> = author.split_whitespace().collect();
+            result += split_name.last().unwrap();
+            result += " et al., "; 
+        },
     }
 
     if let Some(year) = value.date.get_year() {
@@ -809,6 +832,78 @@ mod tests {
         assert_eq!(example.unwrap(), ReferenceDefinition{ 
             id: "example".into(), 
             authors: vec!["Jean Baudrillard".into()],
+            editors: vec![],
+            translators: vec![],
+            title: "Simulacra and Simulation".into(),
+            description: "".into(),
+            container_title: "".into(),
+            publisher: "University of Michigan Press".into(),
+            date: PmdDate::Split{ day: None, month: None, year: Some(1994) },
+            date_retrieved: PmdDate::None,
+            volume: "".into(),
+            edition: "".into(),
+            version: "".into(),
+            issue: "".into(),
+            pages: "176".into(),
+            link: "".into(),
+            doi: "".into(),
+            esbn: "0-472-06521-1".into()
+        });
+    }
+    
+    #[test]
+    fn test_parse_reference_declaration_two_authors() {
+        let example_ref: String = "£example { 
+            title: Simulacra and Simulation,
+            authors: [Jean Baudrillard, Henry Ford],
+            publisher: University of Michigan Press,
+            year: 1994,
+            pages: 176,
+            esbn: 0-472-06521-1,
+        }".to_string();
+        
+        let example = parse_reference(example_ref);
+
+        assert!(example.is_ok());
+        assert_eq!(example.unwrap(), ReferenceDefinition{ 
+            id: "example".into(), 
+            authors: vec!["Jean Baudrillard".into(), "Henry Ford".into()],
+            editors: vec![],
+            translators: vec![],
+            title: "Simulacra and Simulation".into(),
+            description: "".into(),
+            container_title: "".into(),
+            publisher: "University of Michigan Press".into(),
+            date: PmdDate::Split{ day: None, month: None, year: Some(1994) },
+            date_retrieved: PmdDate::None,
+            volume: "".into(),
+            edition: "".into(),
+            version: "".into(),
+            issue: "".into(),
+            pages: "176".into(),
+            link: "".into(),
+            doi: "".into(),
+            esbn: "0-472-06521-1".into()
+        });
+    }
+    
+    #[test]
+    fn test_parse_reference_declaration_multiple_authors_misspelling() {
+        let example_ref: String = "£example { 
+            title: Simulacra and Simulation,
+            author: [Jean Baudrillard, Henry Ford],
+            publisher: University of Michigan Press,
+            year: 1994,
+            pages: 176,
+            esbn: 0-472-06521-1,
+        }".to_string();
+        
+        let example = parse_reference(example_ref);
+
+        assert!(example.is_ok());
+        assert_eq!(example.unwrap(), ReferenceDefinition{ 
+            id: "example".into(), 
+            authors: vec!["Jean Baudrillard".into(), "Henry Ford".into()],
             editors: vec![],
             translators: vec![],
             title: "Simulacra and Simulation".into(),
