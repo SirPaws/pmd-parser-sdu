@@ -1,8 +1,10 @@
 use color_print::cprintln;
+use contact::ContactDefinition;
 use serde_yaml::Value;
 // use gray_matter::Pod;
 
 use crate::*;
+use crate::config::{DEFAULT_URL, DEFAULT_DATA_DIR, DEFAULT_BLOG_DIR};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct TableOfContent {
@@ -17,6 +19,9 @@ pub struct BlogHeader {
     pub title: String,
     pub subtitle: String,
     pub banner: String,
+    pub url: String,
+    pub data_dir: String,
+    pub blog_dir: String,
     pub date_written: PmdDate,
     pub last_update: PmdDate,
     pub toc: Option<TableOfContent>,
@@ -31,6 +36,9 @@ impl BlogHeader {
             title: "".into(),
             subtitle: "".into(),
             banner: "".into(),
+            url: DEFAULT_URL.into(),
+            data_dir: DEFAULT_DATA_DIR.into(),
+            blog_dir: DEFAULT_BLOG_DIR.into(),
             date_written: PmdDate::None,
             last_update: PmdDate::None,
             toc:      None,
@@ -63,6 +71,7 @@ pub enum BlogBody {
     InlineCode(String),
     CodeBlock(String),
     Image(String, String),
+    // EmbeddedLink(String, String),
     Quote(Vec<BlogBody>),
     List(Vec<BlogBody>),
     Paragraph(Box<BlogBody>),
@@ -200,6 +209,7 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                     continue;
                 }
                 
+                
                 if base.starts_with('^') && base.len() > 1 {
                     // this is a citation
                     let citation : String = base.chars().skip(1).collect();
@@ -311,6 +321,48 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
     }
 }
 
+fn get_url(data: &Frontmatter) -> Option<String> {
+    if let Some(url) = data["url"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["base_url"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["base url"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["base-url"].as_string() {
+        Some(url)
+    } else {
+        None
+    }
+}
+
+fn get_data_dir(data: &Frontmatter) -> Option<String> {
+    if let Some(url) = data["data"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["data_dir"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["data-dir"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["data dir"].as_string() {
+        Some(url)
+    } else {
+        None
+    }
+}
+
+fn get_blog_dir(data: &Frontmatter) -> Option<String> {
+    if let Some(url) = data["blog"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["blog_dir"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["blog-dir"].as_string() {
+        Some(url)
+    } else if let Some(url) = data["blog dir"].as_string() {
+        Some(url)
+    } else {
+        None
+    }
+}
+
 fn get_date(data: &Frontmatter) -> Option<String> {
     if let Some(date) = data["date"].as_string() {
         Some(date)
@@ -386,6 +438,7 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
             // TopLevelSyntax::Banner(text)        => { header.banner   = text.to_string();                                },
             TopLevelSyntax::CodeBlock(block)    => { body.push(BlogBody::CodeBlock(block.to_string()));            },
             TopLevelSyntax::Image(img, alt)     => { body.push(BlogBody::Image(img.to_string(), alt.to_string())); },
+            // TopLevelSyntax::EmbeddedLink(img, alt) => { body.push(BlogBody::EmbeddedLink(img.to_string(), alt.to_string())); },
             TopLevelSyntax::Header(text, level) => { body.push(BlogBody::Header(text_parse(&text)?, *level));      },
             TopLevelSyntax::List(list)          => {
                 let mut result = Vec::<BlogBody>::new();
@@ -433,6 +486,7 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
             toc.headers.push((Box::new(BlogBody::Text(header.notes_title.clone())), 1))
         }
 
+
         if references.len() > 0 {
             toc.headers.push((Box::new(BlogBody::Text(header.bibliography_title.clone())), 1))
         }
@@ -469,6 +523,16 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
         
         if let Some(update) = get_last_update(frontmatter) {
             header.last_update = PmdDate::String(update);
+        }
+        
+        if let Some(url) = get_url(frontmatter) {
+            header.url = url;
+        }
+        if let Some(data_dir) = get_data_dir(frontmatter) {
+            header.data_dir = data_dir;
+        }
+        if let Some(blog_dir) = get_blog_dir(frontmatter) {
+            header.blog_dir = blog_dir;
         }
     } else {
         cprintln!("<r>error:</> Document '{}' is missing frontmatter, see 'pmd explain frontmatter'", file_path);
@@ -663,6 +727,7 @@ mod tests {
         let inner = Box::into_inner(result.unwrap());
         assert!(inner == BlogBody::Citation("-other-example".into()))
     }
+    
 }
 
 

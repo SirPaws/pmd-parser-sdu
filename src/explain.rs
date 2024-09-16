@@ -1,5 +1,5 @@
 
-pub fn explain(feature: &Option<String>) {
+pub fn explain(feature: &Option<String>, extra: &Option<String>) {
     let print_all = ||{
         println!("Arguments:");
         println!("    [Feature]");
@@ -14,6 +14,7 @@ pub fn explain(feature: &Option<String>) {
         println!("    bibliography-title    #[bibliography-title] New title");
         println!("    toc                   #[toc] table of contents title here");
         println!("    image                 [[path/to/image] alt text here]");
+        println!("    link                  [[http://example.link]]");
         println!("    header                # header text here");
         println!("    codeblock             ```lang_name\\n text here ```");
         println!("    bold                  **bold text here**");
@@ -27,35 +28,78 @@ pub fn explain(feature: &Option<String>) {
     if let Some(feature) = feature {
         match feature.to_lowercase().as_str() {
             "frontmatter" => {
-                println!("Frontmatter:");
-                println!("    Frontmatter is a way to store meta information about the file");
-                println!("    currently this is only used for pdf files, but in the future");
-                println!("    more might be supported.");
-                println!();
-                println!("    As the name implies, frontmatter is always at the front");
-                println!("    (i.e. the top) of the file, and is formatted as YAML.");
-                println!();
-                println!("    the only items that will be looked for are");
-                println!("    - pdf-text-size");
-                println!("    - pdf-header-left");
-                println!("    - pdf-header-center");
-                println!("    - pdf-header-right");
-                println!("    - pdf-header");
-                println!("    - pdf-footer-left");
-                println!("    - pdf-footer-center");
-                println!("    - pdf-footer-right");
-                println!("    - pdf-footer");
-                println!("Example: ");
-                println!("    To make a frontmatter section you wrap it with three dashes");
-                println!();
-                println!("    ---");
-                println!("    item: this is frontmatter");
-                println!("    ---");
-                println!();
-                println!("Note: ");
-                println!("    the key's 'pdf-header' and 'pdf-footer' are equivalent to");
-                println!("    'pdf-header-center' and 'pdf-footer-center', having");
-                println!("    both will ignore the short versions");
+                if let Some(extra) = extra {
+                    unimplemented!();
+                    match extra.to_lowercase().as_str() {
+                        "title" => {},
+                        "subtitle" => {},
+                        "banner" => {},
+                        "notes-title" => {},
+                        "bibliography-title" => {},
+                        "references-title" => {},
+                        "sources-title" => {},
+                        "bibliography title" => {},
+                        "references title" => {},
+                        "sources title" => {},
+                        "bibliography_title" => {},
+                        "references_title" => {},
+                        "sources_title" => {},
+                        "date" => {},
+                        "date written" => {},
+                        "date-written" => {},
+                        "date_written" => {},
+                        "last-update" => {},
+                        "last_update" => {},
+                        "last update" => {},
+                        "last-updated" => {},
+                        "last_updated" => {},
+                        "last updated" => {},
+                        "pdf-no-first-page" => {},
+                        "pdf-text-size" => {},
+                        "pdf-line-height" => {},
+                        "pdf-font" => {},
+                        "pdf-header" => {},
+                        "pdf-header-left" => {},
+                        "pdf-header-center" => {},
+                        "pdf-header-right" => {},
+                        "pdf-footer" => {},
+                        "pdf-footer-left" => {},
+                        "pdf-footer-center" => {},
+                        "pdf-footer-right" => {},
+                        _ => {}
+                    }
+
+                } else {
+                    println!("Frontmatter:");
+                    println!("    Frontmatter is a way to store meta information about the file");
+                    println!("    currently this is only used for pdf files, but in the future");
+                    println!("    more might be supported.");
+                    println!();
+                    println!("    As the name implies, frontmatter is always at the front");
+                    println!("    (i.e. the top) of the file, and is formatted as YAML.");
+                    println!();
+                    println!("    the only items that will be looked for are");
+                    println!("    - pdf-text-size");
+                    println!("    - pdf-header-left");
+                    println!("    - pdf-header-center");
+                    println!("    - pdf-header-right");
+                    println!("    - pdf-header");
+                    println!("    - pdf-footer-left");
+                    println!("    - pdf-footer-center");
+                    println!("    - pdf-footer-right");
+                    println!("    - pdf-footer");
+                    println!("Example: ");
+                    println!("    To make a frontmatter section you wrap it with three dashes");
+                    println!();
+                    println!("    ---");
+                    println!("    item: this is frontmatter");
+                    println!("    ---");
+                    println!();
+                    println!("Note: ");
+                    println!("    the key's 'pdf-header' and 'pdf-footer' are equivalent to");
+                    println!("    'pdf-header-center' and 'pdf-footer-center', having");
+                    println!("    both will ignore the short versions");
+                }
             },
             "title" | "titles"    => {
                 println!("Titles:");
@@ -103,6 +147,16 @@ pub fn explain(feature: &Option<String>) {
                 println!("    The beginning whitespace between #[banner] and the first");
                 println!("    character will be removed");
             },
+            "embedded" | "embedding" | "url" | "web" => {
+                println!("Links:");
+                println!();
+                println!("Example: ");
+                println!("    [[http://example.link] some alt text]");
+                println!("    [[https://example.link] some alt text]");
+                println!();
+                println!("Note: ");
+                println!();
+            },
             "image" | "images" => {
                 println!("Images:");
                 println!();
@@ -110,6 +164,7 @@ pub fn explain(feature: &Option<String>) {
                 println!("    [[path/to/image.png] an image, with alt text]");
                 println!();
                 println!("Note: ");
+                println!("    uses Open Graph or Twitter meta tags to get embedding");
                 println!();
             },
             "header" | "headers" => {
@@ -181,23 +236,56 @@ pub fn explain(feature: &Option<String>) {
                 println!();
             },
             "reference" | "references" | "citation" | "citations" => {
-                println!("References:");
-                println!();
-                println!("Example: ");
-                println!("    £baudrillard {{");
-                println!("        title: Simulacra and Simulation,");
-                println!("        author: Jean Baudrillard,");
-                println!("        publisher: University of Michigan Press,");
-                println!("        year: 1994,");
-                println!("        pages: 176,");
-                println!("        esbn: 0-472-06521-1,");
-                println!("    }}");
-                println!("    ");
-                println!("    to actually reference these you type the name in a link");
-                println!("    [£baudrillard]");
-                println!();
-                println!("Note: ");
-                println!();
+                if let Some(extra) = extra {
+                    unimplemented!();
+                    match extra.to_lowercase().as_str() {
+                        "title" => {},
+                        "description" => {},
+                        "container-title" => {},
+                        "publisher" => {},
+                        "edition" => {},
+                        "version" => {},
+                        "issue" => {},
+                        "volume" => {},
+                        "pages" => {},
+                        "link" => {},
+                        "doi" => {},
+                        "esbn" => {},
+                        "date" => {},
+                        "day" => {},
+                        "month" => {},
+                        "year" => {},
+                        "date-retrieved" => {},
+                        "day-retrieved" => {},
+                        "month-retrieved" => {},
+                        "year-retrieved" => {},
+                        "author" => {},
+                        "authors" => {},
+                        "editor" => {},
+                        "editors" => {},
+                        "translator" => {},
+                        "translators" => {},
+                        _ => {}
+                    }
+                } else {
+                    println!("References:");
+                    println!();
+                    println!("Example: ");
+                    println!("    £baudrillard {{");
+                    println!("        title: Simulacra and Simulation,");
+                    println!("        author: Jean Baudrillard,");
+                    println!("        publisher: University of Michigan Press,");
+                    println!("        year: 1994,");
+                    println!("        pages: 176,");
+                    println!("        esbn: 0-472-06521-1,");
+                    println!("    }}");
+                    println!("    ");
+                    println!("    to actually reference these you type the name in a link");
+                    println!("    [£baudrillard]");
+                    println!();
+                    println!("Note: ");
+                    println!();
+                }
             },
             _ => print_all(),
         };

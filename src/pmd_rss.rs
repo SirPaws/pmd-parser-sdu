@@ -63,6 +63,10 @@ impl PMDSerializer for PMDRSSSerializer {
         Ok(format!("<span>{text}</span>"))
     }
 
+    // fn convert_embedded_link(&mut self, src: &String, alt: &String) -> Result<String> {
+    //     self.convert_link(&Alternative{base: Box::new(BlogBody::Text(src.to_string())), alt: Box::new(BlogBody::Text(alt.to_string())) })
+    // }
+
     fn convert_link(&mut self, link: &Alternative) -> Result<String> {
         let href = self.convert_element(&link.alt)?;
         let text = self.convert_element(&link.base)?;
@@ -154,6 +158,7 @@ impl PMDSerializer for PMDRSSSerializer {
             Ok("(MISSING CITATION)".into())
         }
     }
+
     fn convert_note(&mut self, id: &String) -> Result<String> {
         Ok(format!("<sup><a id='{id}-backref' href='#^{id}'>{id}</sup></a>"))
     }
@@ -175,13 +180,16 @@ impl PMDSerializer for PMDRSSSerializer {
             } else {
                 md.header.date_written.to_date().unwrap_or(chrono::Utc::now())
             }.to_rfc3339();
+        let url = &md.header.url;
+        let data_dir = &md.header.data_dir;
+        let blog_dir = &md.header.blog_dir;
 
         self.push_line("<entry>\n");
         self.push_tab();
         self.push_line(format!("<title>{title}</title>"));
-        self.push_line(format!("<link href=\"https://sirpaws.dev/blog/{filename}\"/>"));
+        self.push_line(format!("<link href=\"{url}/{blog_dir}/{filename}\"/>"));
         self.push_line(format!("<updated>{date}</updated>"));
-        self.push_line(format!("<id>https://sirpaws.dev/blog/{filename}</id>"));
+        self.push_line(format!("<id>{url}/{blog_dir}/{filename}</id>"));
         self.push_line("<content type=\"xhtml\">");
 
         self.push_tab();

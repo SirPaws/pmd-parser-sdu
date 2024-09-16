@@ -1,3 +1,4 @@
+
 use crate::*;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -21,6 +22,7 @@ pub enum TopLevelSyntax {
     ReferenceDefinition(ReferenceDefinition),
     NoteDefinition{id: String, text: String},
     TOC(String),
+//  EmbeddedLink(String, String)
 //  NotesTitle(String),
 //  BibliographyTitle(String),
 }
@@ -167,33 +169,65 @@ fn remove_comments(text: &String) -> String {
     result
 }
 
+struct ParseObject {
+    is_eating: bool,
+    text: String,
+    syntax: Vec<TopLevelSyntax>
+}
+impl ParseObject {
+    fn new() -> Self {
+        Self {
+            is_eating: false,
+            text: String::new(),
+            syntax: vec![]
+        }
+    }
+
+    fn eat(&mut self, text: &str) {
+        self.is_eating = true;
+        self.text += text;
+        self.text.push('\n');
+    }
+
+    fn consume(&mut self) {
+        if self.is_eating {
+            let text = self.text.trim();
+            if !text.is_empty() {
+                self.syntax.push(TopLevelSyntax::Paragraph(format!("{text}\n")));
+            }
+            self.is_eating = false;
+            self.text.clear();
+        }
+    }
+
+    fn push(&mut self, syntax: TopLevelSyntax) {
+        self.consume();
+        self.syntax.push(syntax);
+    }
+}
+
 pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
     // let matter = Matter::<YAML>::new();
     let (frontmatter, content) = parse_frontmatter(&file_content);
 
     let mut content = content.to_string();
 
+    let mut object = ParseObject::new();
+    /*
     let mut is_eating = false;
     let mut text = String::new();
     let mut toplevel_syntax = Vec::<TopLevelSyntax>::new();
+    */
     
     if let Some(frontmatter) = frontmatter {
-        toplevel_syntax.push(TopLevelSyntax::FrontMatter(frontmatter));
+        object.push(TopLevelSyntax::FrontMatter(frontmatter));
     }
 
     while !content.is_empty() {
         let current = content.lines().nth(0).context("expected a line where there was none")?;
 
         if current.len() == 0 {
-            if !is_eating {
-                content = next_line(&content[current.len()..]).into();
-                continue;
-            }
-            is_eating = false;
-            text += &content[0..current.len()];
-            text += "\n";
-            toplevel_syntax.push(TopLevelSyntax::Paragraph(text));
-            text = String::new();
+            object.consume();
             content = next_line(&content[current.len()..]).into();
             continue;
         }
@@ -226,7 +260,7 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
                 line = new_line.unwrap();
             }
 
-            toplevel_syntax.push( TopLevelSyntax::Quote(list));
+            object.push( TopLevelSyntax::Quote(list));
             continue;
         }
 
@@ -245,14 +279,14 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
                 line = new_line.unwrap();
             }
 
-            toplevel_syntax.push( TopLevelSyntax::List(list));
+            object.push( TopLevelSyntax::List(list));
             continue;
         }
         
         if current.starts_with("```") {
             let last : usize = content[3..].find("```").context("expected a code block but couldn't find the end")?;
 
-            toplevel_syntax.push(TopLevelSyntax::CodeBlock(content[3..last + 3].into()));
+            object.push(TopLevelSyntax::CodeBlock(content[3..last + 3].into()));
             content = next_line(&content[last + 6..]).into();
             continue;
         }
@@ -308,21 +342,21 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
         
         if let Some(n) = is_meta(current, "toc") {
             let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::TOC(text));
+            object.push(TopLevelSyntax::TOC(text));
             content = next_line(&content[current.len()..]).into();
             continue;
         }
         
         if let Some(n) = is_meta(current, "table-of-content") {
             let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::TOC(text));
+            object.push(TopLevelSyntax::TOC(text));
             content = next_line(&content[current.len()..]).into();
             continue;
         }
         
         if let Some(n) = is_meta(current, "table-of-contents") {
             let text: String = current[n..].trim_start().into();
-            toplevel_syntax.push(TopLevelSyntax::TOC(text));
+            object.push(TopLevelSyntax::TOC(text));
             content = next_line(&content[current.len()..]).into();
             continue;
         }
@@ -334,7 +368,7 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
                 if counter >= current.len() { break }
             }
 
-            toplevel_syntax.push(TopLevelSyntax::Header( current[counter..].trim_start().into(), counter));
+            object.push(TopLevelSyntax::Header( current[counter..].trim_start().into(), counter));
 
             content = next_line(&content[current.len()..]).into();
             continue;
@@ -342,13 +376,14 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
 
 
         if let Some((note_id, note_text)) = try_parse_note(current) {
-            toplevel_syntax.push(TopLevelSyntax::NoteDefinition { id: note_id, text: note_text });
+            object.push(TopLevelSyntax::NoteDefinition { id: note_id, text: note_text });
             content = next_line(&content[current.len()..]).into();
             continue;
         }
 
-        if current.starts_with("[[") {
-            let text :&str = &current[2..];
+        if current.starts_with("[[") || current.starts_with("![[") {
+            let count = if current.starts_with("[[") { 2 } else { 3 };
+            let text :&str = &current[count..];
             let img_end = text.find(']').context("unable to find ']' for image")?;
             let img = &text[0..img_end];
             let mut remaining_on_line = &text[img_end + 1..];
@@ -357,14 +392,14 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             if remaining_on_line.len() != 0 {
                 remaining_on_line = remaining_on_line.trim_start();
                 if remaining_on_line.starts_with(']') {
-                    toplevel_syntax.push(TopLevelSyntax::Image(img.into(), "".into()));
+                    object.push(TopLevelSyntax::Image(img.into(), "".into()));
                     content = next_line(&content[current.len()..]).into();
                     continue;
                 }
 
                 if let Some(index) = remaining_on_line.find(']') {
                     alt_text = remaining_on_line[0..index].into();
-                    toplevel_syntax.push(TopLevelSyntax::Image(img.into(), alt_text));
+                    object.push(TopLevelSyntax::Image(img.into(), alt_text));
                     content = next_line(&content[current.len()..]).into();
                     continue;
                 }
@@ -377,10 +412,18 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
 
             let image_text = String::from(img);
             let end_index = content.find(']').context("unable to find ']' for image")?;
+            
+
             content = next_line(&content[current.len()..]).into();
             alt_text += &content[0..end_index];
-            toplevel_syntax.push(TopLevelSyntax::Image(image_text, alt_text));
-                content = next_line(&content[end_index + 1..]).into();
+            object.push(
+                // if image_text.starts_with("http") {
+                //     TopLevelSyntax::EmbeddedLink(image_text, alt_text)
+                // } else {
+                    TopLevelSyntax::Image(image_text, alt_text)
+                // }
+            );
+            content = next_line(&content[end_index + 1..]).into();
             continue;
         }
 
@@ -390,22 +433,19 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             
             let end = (&content).find('}').expect("could not find the end of citation");
             let citation = parse_reference(content[0..(end+1)].to_string())?;
-            toplevel_syntax.push(TopLevelSyntax::ReferenceDefinition(citation));
+            object.push(TopLevelSyntax::ReferenceDefinition(citation));
             content = content[(end + 1)..].to_string();
             continue;
         }
+        
 
-        is_eating = true;
-        text += &content[0..current.len()];
-        text += "\n";
+        object.eat(&content[0..current.len()]);
         content = next_line(&content[current.len()..]).into();
     }
 
-    if is_eating && text.trim().len() != 0 {
-        toplevel_syntax.push(TopLevelSyntax::Paragraph(text));
-    }
+    object.consume();
 
-    for element in &mut toplevel_syntax {
+    for element in &mut object.syntax {
         match element {
             TopLevelSyntax::Paragraph(text) => {
                 if !text.contains("%%") { continue }
@@ -416,7 +456,7 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
     }
 
 
-    Ok(toplevel_syntax)
+    Ok(object.syntax)
 }
 
 #[cfg(test)]
@@ -478,6 +518,19 @@ mod tests {
         assert!(result.is_ok());
         let syntax = result.unwrap();
         assert_eq!(syntax, vec![TopLevelSyntax::Paragraph("this won't be removed\n".into())])
+    }
+
+    #[test]
+    fn test_paragraph_order() {
+        let text = "here is a paragraph with some text\n# and here is a header".to_string();
+        
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![
+            TopLevelSyntax::Paragraph("here is a paragraph with some text\n".into()),
+            TopLevelSyntax::Header("and here is a header".into(), 1),
+        ])
     }
     
     // #[test]
@@ -663,6 +716,37 @@ mod tests {
         assert!(result.is_ok());
         let syntax = result.unwrap();
         assert_eq!(syntax, vec![TopLevelSyntax::CodeBlock("c\ncodeblock".into())])
+    }
+
+    /*
+    #[test]
+    fn test_url() {
+        let text = "[[http://some.link]]".to_string();
+
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![TopLevelSyntax::EmbeddedLink("http://some.link".into(), "".into())])
+    }*/
+
+    #[test]
+    fn test_url_https() {
+        let text = "[[https://some.link]]".to_string();
+
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![TopLevelSyntax::Image("https://some.link".into(), "".into())])
+    }
+    
+    #[test]
+    fn test_url_with_alt_text() {
+        let text = "[[http://some.link] with alt text]".to_string();
+
+        let result = toplevel_parse(&text);
+        assert!(result.is_ok());
+        let syntax = result.unwrap();
+        assert_eq!(syntax, vec![TopLevelSyntax::Image("http://some.link".into(), "with alt text".into())])
     }
     
     #[test]

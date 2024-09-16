@@ -17,6 +17,9 @@ impl Frontmatter {
             data: BTreeMap::new()
         }
     }
+    pub fn has<S: AsRef<str>>(&self, key: S) -> bool {
+        self.data.contains_key(key.as_ref())
+    }
 }
 
 impl PartialEq for Frontmatter {
@@ -131,7 +134,6 @@ pub fn parse_frontmatter(text: &str) -> (Option<Frontmatter>, &str) {
         (None, text)
     }
 }
-
 
 #[cfg(test)]
 mod tests {

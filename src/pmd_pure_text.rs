@@ -16,10 +16,15 @@ impl PMDSerializer for PMDPureTextSerializer {
         let actual = self.convert_element(&hoverable.base)?;
         Ok(format!("{alt}({actual})"))
     }
+    
 
     fn convert_styled(&mut self, styled: &Alternative) -> Result<String> {
         self.convert_element(&styled.alt)
     }
+
+    // fn convert_embedded_link(&mut self, src: &String, alt: &String) -> Result<String> {
+    //     self.convert_link(&Alternative{base: Box::new(BlogBody::Text(src.to_string())), alt: Box::new(BlogBody::Text(alt.to_string())) })   
+    // }
 
     fn convert_link(&mut self, link: &Alternative) -> Result<String> {
         let text = self.convert_element(&link.alt)?;

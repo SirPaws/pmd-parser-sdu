@@ -3,6 +3,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use anyhow::{anyhow, Context, Result};
 use color_print::cprintln;
 
+use crate::structured_base_parser::{peek_next_token, eat_token, parse_value};
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Month {
     January,
@@ -190,6 +192,7 @@ impl PmdDate {
     }
 }
 
+
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct ReferenceDefinition {
     pub id: String,
@@ -212,141 +215,49 @@ pub struct ReferenceDefinition {
     pub esbn: String,
 }
 
-fn peek_next_token(content: &str) -> Option<String> {
-    let mut text : String = "".into();
-    let mut peekable_content = content.trim_start().chars().peekable();
-    while let Some(character) = peekable_content.peek(){
-        if character.is_whitespace() && text.len() == 0{
-            peekable_content.next();
-            continue;
-        } else if character.is_whitespace() {
-            break;
-        }
-
-        match character {
-            &':' | &'{' | &'}' | &',' | &'[' | &']' => {
-                if text.len() > 0 {
-                    break;
-                } else {
-                    return Some(character.to_string());
-                }
-            },
-            &'"' => {
-                if text.len() > 0 {
-                    break;
-                } else {
-                    peekable_content.next();
-                    while let Some(chr) = peekable_content.peek() && chr != &'"' {
-                        if chr == &'\n' { break }
-                        text.push(*chr);
-                    }
-                    break;
-                }
-            }
-            _ => {
-                text.push(*character)
-            }
-        }
-        peekable_content.next();
-    }
-
-    if text.len() == 0 { None } else { Some(text) }
-}
-
-fn eat_token(content: &str, token: &str) -> String {
-    content.trim_start()[token.len()..].to_string()
-}
-
-fn parse_ref_variable(text: &str) -> (String, String) { 
-    let mut buf = text.to_string();
-    while buf.len() != 0 && buf.chars().nth(0).is_some_and(|x| !(x == ',' || x == '\n')) {
-        buf = buf.chars().skip(1).collect();
-    };
-
-    let diff = text.len() - buf.len();
-    let result = (buf, text[0..diff].trim_start().to_string());
-    result
-}
-
-fn parse_ref_array(text: &str)    -> (String, Vec<String>) {
-
-    let opt_first_token = peek_next_token(text);
-    if opt_first_token.is_none() || opt_first_token.unwrap() != "[" {
-        let mut buf = text.to_string();
-        while buf.len() != 0 && buf.chars().nth(0).is_some_and(|x| x != '\n') {
-            buf = buf.chars().skip(1).collect();
-        };
-        (buf, vec![])
-    } else {
-        let mut buf = eat_token(text, "[");
-        let mut names = vec![];
-        while let Some(tk) = peek_next_token(&buf) {
-            if tk == "]" { break; }
-
-            let mut name = tk.to_string();
-
-            buf = eat_token(&buf, &tk);
-            while let Some(comma) = peek_next_token(&buf) && comma != "," {
-                if comma == "]" { break; }
-                name += " "; 
-                name += comma.as_str(); 
-                buf = eat_token(&buf, &comma);
-            }
-            if let Some(comma) = peek_next_token(&buf) && comma == "," {
-                buf = eat_token(&buf, &comma);
-            }
-
-            names.push(name);
-        }
-
-        if let Some(tk) = peek_next_token(&buf) && tk == "]" {
-            buf = eat_token(&buf, "]");
-        }
-
-        (buf, names)
-    }
-}
-
 fn parse_ref_day(text: &str)      -> (String, u32) { 
-    let mut buf = text.to_string();
-    while buf.len() != 0 && buf.chars().nth(0).is_some_and(|x| !(x == ',' || x == '\n')) {
-        buf = buf.chars().skip(1).collect();
-    };
-
-    let diff = text.len() - buf.len();
-    let month_text = text[0..diff].trim_start().trim_end();
-    let month = get_day_from_string(month_text).unwrap_or(0);
-    let result = (buf, month);
-    result
+    if let Some(token) = peek_next_token(text) {
+        if let Some(day) = get_day_from_string(token.as_str()) {
+            (eat_token(text, token.as_str()), day)
+        } else {
+            (eat_token(text, token.as_str()), 0)
+        }
+    } else {
+        (text.to_string(), 0)
+    }
 }
 
 fn parse_ref_month(text: &str)    -> (String, Month) {
-    let mut buf = text.to_string();
-    while buf.len() != 0 && buf.chars().nth(0).is_some_and(|x| !(x == ',' || x == '\n')) {
-        buf = buf.chars().skip(1).collect();
-    };
-
-    let diff = text.len() - buf.len();
-    let month_text = text[0..diff].trim_start().trim_end();
-    let month = get_month_from_string(month_text).unwrap_or(Month::January);
-    let result = (buf, month);
-    result
+    if let Some(token) = peek_next_token(text) {
+        if let Some(month) = get_month_from_string(token.as_str()) {
+            (eat_token(text, token.as_str()), month)
+        } else {
+            (eat_token(text, token.as_str()), Month::January)
+        }
+    } else {
+        (text.to_string(), Month::January)
+    }
 }
 
 fn parse_ref_year(text: &str)     -> (String, u32) { 
-    let mut buf = text.to_string();
-    while buf.len() != 0 && buf.chars().nth(0).is_some_and(|x| !(x == ',' || x == '\n')) {
-        buf = buf.chars().skip(1).collect();
-    };
-
-    let diff = text.len() - buf.len();
-    let number = get_year_from_string(text[0..diff].trim_start()).unwrap_or(0);
-    let result = (buf, number);
-    result
+    if let Some(token) = peek_next_token(text) {
+        if let Some(year) = get_year_from_string(token.as_str()) {
+            (eat_token(text, token.as_str()), year)
+        } else {
+            (eat_token(text, token.as_str()), 0)
+        }
+    } else {
+        (text.to_string(), 0)
+    }
 }
 
 fn parse_ref_date(text: &str)     -> (String, String) {
-    parse_ref_variable(text)
+    let (buf, result) = parse_value(text);
+    (buf, if result.is_empty() {
+        "".to_string()
+    } else {
+        result[0].clone()
+    })
 }
 
 // fn update_date() 
@@ -384,70 +295,50 @@ pub fn parse_reference(content: String) -> Result<ReferenceDefinition> {
                 buf = eat_token(&buf, &token);
 
                 match ident.to_lowercase().as_str() {
-                    "authors"           => {
+                    "authors" | "author" => {
                         let authors;
-                        (buf, authors) = parse_ref_array(&buf);
+                        (buf, authors) = parse_value(&buf);
                         for author in authors {
                             reference.authors.push(author);
                         }
                     },
-                    "author"           => {
-                        if let Some(token) = peek_next_token(&buf) && token == "[" {
-                            // the user likely spelled 'author' but meant 'authors'
-                            let authors;
-                            (buf, authors) = parse_ref_array(&buf);
-                            for author in authors {
-                                reference.authors.push(author);
-                            }
-                        } else {
-                            let author;
-                            (buf, author) = parse_ref_variable(&buf);
-                            reference.authors.push(author);
-                        }
-                    },
-                    "editors"           => {
+                    "editors" | "editor" => {
                         let editors;
-                        (buf, editors) = parse_ref_array(&buf);
+                        (buf, editors) = parse_value(&buf);
                         for editor in editors {
                             reference.editors.push(editor);
                         }
                     },
-                    "editor"           => {
-                        let editor;
-                        (buf, editor) = parse_ref_variable(&buf);
-                        reference.editors.push(editor);
-                    },
-                    "translators"           => {
+                    "translators" | "translator" => {
                         let translators;
-                        (buf, translators) = parse_ref_array(&buf);
+                        (buf, translators) = parse_value(&buf);
                         for translator in translators {
                             reference.translators.push(translator);
                         }
                     },
-                    "translator"           => {
-                        let translator;
-                        (buf, translator) = parse_ref_variable(&buf);
-                        reference.editors.push(translator);
-                    },
-                    "title"             => {
-                        let title;
-                        (buf, title) = parse_ref_variable(&buf);
-                        reference.title = title;
-                    },
-                    "description"       => {
-                        let title;
-                        (buf, title) = parse_ref_variable(&buf);
-                        reference.description = title;
-                    },
-                    "container-title"   => {
-                        let title;
-                        (buf, title) = parse_ref_variable(&buf);
-                        reference.container_title = title;
-                    },
-                    "publisher"         => {
-                        let title;
-                        (buf, title) = parse_ref_variable(&buf);
-                        reference.publisher = title;
+                    "title" | "description" | "container-title" | 
+                    "publisher" | "edition" | "version" | "issue" | 
+                    "volume" | "pages" | "link" | "doi" | "esbn"
+                        => {
+                        let value;
+                        (buf, value) = parse_value(&buf);
+                        if !value.is_empty() {
+                            match ident.to_lowercase().as_str() {
+                            "title"           => reference.title           = value[0].clone(),
+                            "description"     => reference.description     = value[0].clone(),
+                            "container-title" => reference.container_title = value[0].clone(),
+                            "publisher"       => reference.publisher       = value[0].clone(),
+                            "edition"         => reference.edition         = value[0].clone(),
+                            "version"         => reference.version         = value[0].clone(),
+                            "issue"           => reference.issue           = value[0].clone(),
+                            "volume"          => reference.volume          = value[0].clone(),
+                            "pages"           => reference.pages           = value[0].clone(),
+                            "link"            => reference.link            = value[0].clone(),
+                            "doi"             => reference.doi             = value[0].clone(),
+                            "esbn"            => reference.esbn            = value[0].clone(),
+                            _                 => {},
+                            }
+                        }
                     },
                     "date"              => {
                         let date;
@@ -506,46 +397,6 @@ pub fn parse_reference(content: String) -> Result<ReferenceDefinition> {
                             let (day, month, _) = reference.date.split_date();
                             reference.date_retrieved = PmdDate::Split{day, month, year: Some(year)};
                         }
-                    },
-                    "edition"           => {
-                        let edition;
-                        (buf, edition) = parse_ref_variable(&buf);
-                        reference.edition = edition;
-                    },
-                    "version"           => {
-                        let version;
-                        (buf, version) = parse_ref_variable(&buf);
-                        reference.version = version;
-                    },
-                    "issue"             => {
-                        let issue;
-                        (buf, issue) = parse_ref_variable(&buf);
-                        reference.issue = issue;
-                    },
-                    "volume"            => {
-                        let volume;
-                        (buf, volume) = parse_ref_variable(&buf);
-                        reference.volume = volume;
-                    }
-                    "pages"             => {
-                        let pages;
-                        (buf, pages) = parse_ref_variable(&buf);
-                        reference.pages = pages;
-                    },
-                    "link"              => {
-                        let link;
-                        (buf, link) = parse_ref_variable(&buf);
-                        reference.link = link;
-                    },
-                    "doi"               => {
-                        let doi;
-                        (buf, doi) = parse_ref_variable(&buf);
-                        reference.doi = doi;
-                    },
-                    "esbn"              => {
-                        let esbn;
-                        (buf, esbn) = parse_ref_variable(&buf);
-                        reference.esbn = esbn;
                     },
                     _ => break
                 }

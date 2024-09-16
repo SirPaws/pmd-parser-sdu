@@ -2,13 +2,13 @@ use color_print::cprintln;
 use anyhow::anyhow;
 use crate::*;
 
-struct Reference {
-    def: ReferenceDefinition,
+struct Reference<T> {
+    def: T,
     times_used: usize
 }
 
-impl Reference {
-    fn new(def: ReferenceDefinition) -> Self {
+impl<T> Reference<T> {
+    fn new(def: T) -> Self {
         Self { def, times_used: 0 }
     }
 } 
@@ -16,7 +16,7 @@ impl Reference {
 pub struct PMDHTMLSerializer { 
     filename: String,
     toc: Option<TableOfContent>,
-    references: HashMap<String, Reference>,
+    references: HashMap<String, Reference<ReferenceDefinition>>,
     num_tabs:   usize,
     quote_id:   usize,
     list_id :   usize,
@@ -29,7 +29,7 @@ impl PMDHTMLSerializer {
     pub fn new(filename: &str) -> Self {
         Self { 
             filename: filename.into(),
-            toc: None,
+            toc: None, 
             references: HashMap::new(),
             num_tabs:   0,
             quote_id:   0,
@@ -83,8 +83,13 @@ impl PMDHTMLSerializer {
         result
     }
 
-    fn prepare_header(&mut self, title: &String, description: &String, banner: &String) -> String {
+    fn prepare_header(&mut self, header: &BlogHeader, description: &String) -> String {
         let mut output = String::new();
+        let title = &header.title;
+        let banner = &header.banner;
+        let url = &header.url;
+        let data_dir = &header.data_dir;
+        let blog_dir = &header.blog_dir;
 
         output += "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\">\n";
         output += "\n";
@@ -103,13 +108,13 @@ impl PMDHTMLSerializer {
         output += "\n";
         output += "<!-- Open Graph / Facebook -->\n";
         output += "<meta property=\"og:type\" content=\"website\">\n";
-        output += format!("<meta property=\"og:url\" content=\"https://sirpaws.dev/blog/{}.html\">\n", self.filename).as_str();
+        output += format!("<meta property=\"og:url\" content=\"{url}/{blog_dir}/{}.html\">\n", self.filename).as_str();
         output += format!("<meta property=\"og:title\" content=\"{}\">\n", title).as_str();
         output += format!("<meta property=\"og:description\" content=\"{}\">\n", description).as_str();
         if banner.len() > 0 {
-            output += format!("<meta property=\"og:image\" content=\"https://sirpaws.dev/blog/{}\">\n", banner).as_str();
+            output += format!("<meta property=\"og:image\" content=\"{url}/{blog_dir}/{}\">\n", banner).as_str();
         } else {
-            output += "<meta property=\"og:image\" content=\"https://sirpaws.dev/data/minibanner.png\">\n";
+            output += format!("<meta property=\"og:image\" content=\"{url}/{data_dir}/minibanner.png\">\n").as_str();
         }
         output += "\n";
         output += "<!-- Twitter -->\n";
@@ -118,13 +123,13 @@ impl PMDHTMLSerializer {
         } else {
             output += "<meta property=\"twitter:card\" content=\"summary\">\n";
         }
-        output += format!("<meta property=\"twitter:url\" content=\"https://sirpaws.dev/blog/{}.html\">\n", self.filename).as_str();
+        output += format!("<meta property=\"twitter:url\" content=\"{url}/{blog_dir}/{}.html\">\n", self.filename).as_str();
         output += format!("<meta property=\"twitter:title\" content=\"{}\">\n", title).as_str();
         output += format!("<meta property=\"twitter:description\" content=\"{}\">\n", description).as_str();
         if banner.len() > 0 {
-            output += format!("<meta property=\"twitter:image\" content=\"https://sirpaws.dev/blog/{}\">\n", banner).as_str();
+            output += format!("<meta property=\"twitter:image\" content=\"{url}/{blog_dir}/{}\">\n", banner).as_str();
         } else {
-            output += "<meta property=\"twitter:image\" content=\"https://sirpaws.dev/data/minibanner.png\">\n";
+            output += format!("<meta property=\"twitter:image\" content=\"{url}/{blog_dir}/minibanner.png\">\n").as_str();
         }
         output += "\n";
         output += "<!-- stylesheets -->\n";
@@ -361,16 +366,19 @@ pub fn to_html_bibliography(value: &ReferenceDefinition) -> String {
     result
 }
 
-impl PMDSerializer for PMDHTMLSerializer {
 
+
+impl PMDSerializer for PMDHTMLSerializer {
     fn convert(&mut self, md: &PawsMarkdown) -> Result<String> {
         let description: String;
         let mut output = String::new();
         self.toc = md.header.toc.clone();
 
+
         for (id, reference) in &md.references {
             self.references.insert(id.clone(), Reference::new(reference.clone()));
         }
+        
 
         let paragraph = md.body.iter().find(|&x| match x { BlogBody::Paragraph(_) => true, _ => false});
         if let Some(BlogBody::Paragraph(content)) = paragraph {
@@ -380,7 +388,7 @@ impl PMDSerializer for PMDHTMLSerializer {
             description = "".into();
         }
 
-        let header = self.prepare_header(&md.header.title, &description, &md.header.banner);
+        let header = self.prepare_header(&md.header, &description);
 
         output +=   "<!doctype html>\n";
         output +=   "<html>\n";
@@ -567,6 +575,7 @@ impl PMDSerializer for PMDHTMLSerializer {
                 output += "</section>\n";
             }
         }
+        
 
         if md.references.len() != 0 {
             let id = PMDHTMLSerializer::generate_id(&md.header.bibliography_title, ||"missing".into());
@@ -628,7 +637,7 @@ impl PMDSerializer for PMDHTMLSerializer {
                 output += self.tab().as_str();
                 output += "</section>\n";
             }
-        }
+        }        
 
         self.pop_tab();
         output += self.tab().as_str();
@@ -680,6 +689,9 @@ impl PMDSerializer for PMDHTMLSerializer {
         let style = self.convert_element(&styled.base)?;
         Ok(format!("<span class='embedded-style' style='{style}'>{text}</span>"))
     }
+    
+    // fn convert_embedded_link(&mut self, src: &String, alt: &String) -> Result<String> {
+    // }
 
     fn convert_link(&mut self, link: &Alternative) -> Result<String> {
         let href = self.convert_element(&link.alt)?;
@@ -887,6 +899,8 @@ impl PMDSerializer for PMDHTMLSerializer {
             Ok(format!("(MISSING CITATION)").to_string())
         }
     }
+    
+
     fn convert_note(&mut self, id: &String) -> Result<String> {
         Ok(format!("<sup><a id='{id}-backref' href='#^{id}'>{id}</sup></a>"))
     }

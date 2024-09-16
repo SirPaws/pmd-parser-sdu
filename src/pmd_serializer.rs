@@ -19,6 +19,7 @@ pub trait PMDSerializer {
     fn convert_citation(&mut self, citation: &String) -> Result<String>;
     fn convert_note(&mut self, id: &String) -> Result<String>;
     fn convert_toc(&mut self) -> Result<String>;
+    // fn convert_embedded_link(&mut self, src: &String, alt: &String) -> Result<String>;
 
     fn convert_element(&mut self, element: &BlogBody) -> Result<String> {
         match element {
@@ -31,6 +32,7 @@ pub trait PMDSerializer {
             BlogBody::InlineCode(text)        => self.convert_inlinecode(text) ,
             BlogBody::CodeBlock(text)         => self.convert_codeblock(text)  ,
             BlogBody::Image(text, alt)        => self.convert_image(text, alt),
+            // BlogBody::EmbeddedLink(text, alt) => self.convert_embedded_link(text, alt),
             BlogBody::Quote(lines)            => self.convert_quote(lines),
             BlogBody::List(list)              => self.convert_list(list),
             BlogBody::Paragraph(text)         => self.convert_paragraph(text),

@@ -6,13 +6,13 @@ use headless_chrome::Browser;
 use std::io::Write;
 use serde_yaml::Value;
 
-struct Reference {
-    def: ReferenceDefinition,
+struct Reference<T> {
+    def: T,
     times_used: usize
 }
 
-impl Reference {
-    fn new(def: ReferenceDefinition) -> Self {
+impl<T> Reference<T> {
+    fn new(def: T) -> Self {
         Self { def, times_used: 0 }
     }
 } 
@@ -21,7 +21,7 @@ pub struct PMDPDFSerializer {
     #[allow(dead_code)]
     filename: String,
     toc: Option<TableOfContent>,
-    references: HashMap<String, Reference>,
+    references: HashMap<String, Reference<ReferenceDefinition>>,
     num_tabs:   usize,
 }
 
@@ -69,11 +69,12 @@ impl PMDPDFSerializer {
 
         let top_left   = Self::parse_pdf_string(&frontmatter["pdf-header-left"]  );
         let mut top_center = Self::parse_pdf_string(&frontmatter["pdf-header-center"]);
-        let top_right  = Self::parse_pdf_string(&frontmatter["pdf-header-left"]  );
+        let top_right  = Self::parse_pdf_string(&frontmatter["pdf-header-right"]  );
 
         let bottom_left   = Self::parse_pdf_string(&frontmatter["pdf-footer-left"]  );
         let mut bottom_center = Self::parse_pdf_string(&frontmatter["pdf-footer-center"]);
-        let bottom_right  = Self::parse_pdf_string(&frontmatter["pdf-footer-left"]  );
+        let bottom_right  = Self::parse_pdf_string(&frontmatter["pdf-footer-right"]  );
+        let font = &frontmatter["pdf-font"].as_str();
 
         if top_center == "" {
             top_center = Self::parse_pdf_string(&frontmatter["pdf-header"]);
@@ -98,7 +99,11 @@ impl PMDPDFSerializer {
         output += "<!-- stylesheets -->\n";
         output += "<style>\n";
         output += "main {\n";
-        output += "    font-family: 'Atkinson Hyperlegible', sans-serif;\n";
+        if let Some(font) = font {
+            output += format!("    font-family: '{font}';\n").as_str()
+        } else {
+            output += "    font-family: 'Atkinson Hyperlegible', sans-serif;\n";
+        }
         if let Some(text_size) = text_size {
             output += format!("    font-size: {text_size}pt;\n").as_str();
         }
@@ -208,9 +213,11 @@ impl PMDPDFSerializer {
 
         output += "\n";
         output += "@media print {\n";
-        output += "    .title {\n";
-        output += "        page-break-after: always;\n";
-        output += "    }\n";
+        if !frontmatter.has("pdf-no-first-page") {
+            output += "    .title {\n";
+            output += "        page-break-after: always;\n";
+            output += "    }\n";
+        }
         output += "\n";
         output += "    .toc {\n";
         output += "        page-break-after: always;\n";
@@ -226,15 +233,17 @@ impl PMDPDFSerializer {
         output += format!("       @bottom-right  {{content: {bottom_right }}}\n").as_str();
         output += "    }\n";
         output += "\n";
-        output += "   @page:first {\n";
-        output += "       @top-left   {content: none}\n";
-        output += "       @top-center {content: none}\n";
-        output += "       @top-right  {content: none}\n";
-        output += "\n";
-        output += "       @bottom-left   {content: none}\n";
-        output += "       @bottom-center {content: none}\n";
-        output += "       @bottom-right  {content: none}\n";
-        output += "   }\n";
+        if !frontmatter.has("pdf-no-first-page") {
+            output += "   @page:first {\n";
+            output += "       @top-left   {content: none}\n";
+            output += "       @top-center {content: none}\n";
+            output += "       @top-right  {content: none}\n";
+            output += "\n";
+            output += "       @bottom-left   {content: none}\n";
+            output += "       @bottom-center {content: none}\n";
+            output += "       @bottom-right  {content: none}\n";
+            output += "   }\n";
+        }
         output += "}\n";
         output += "</style>\n";
         output += "\n";
@@ -477,6 +486,7 @@ pub fn to_html_bibliography(value: &ReferenceDefinition) -> String {
     result.replace("&", "&amp;")
 }
 
+
 impl PMDSerializer for PMDPDFSerializer {
 
     fn convert(&mut self, md: &PawsMarkdown) -> Result<String> {
@@ -487,6 +497,7 @@ impl PMDSerializer for PMDPDFSerializer {
         for (id, reference) in &md.references {
             self.references.insert(id.clone(), Reference::new(reference.clone()));
         }
+        
 
         let paragraph = md.body.iter().find(|&x| match x { BlogBody::Paragraph(_) => true, _ => false});
         if let Some(BlogBody::Paragraph(content)) = paragraph {
@@ -500,6 +511,7 @@ impl PMDSerializer for PMDPDFSerializer {
         if let Some(toc) = md.header.toc.as_ref() {
             max_depth = toc.max_depth;
         }
+        
 
         let header = self.prepare_header(&md.header.frontmatter, max_depth, &md.header.title, &description);
 
@@ -629,6 +641,7 @@ impl PMDSerializer for PMDPDFSerializer {
                 output += "</section>\n";
             }
         }
+        
 
         if md.references.len() != 0 {
             let id = PMDPDFSerializer::generate_id(&md.header.bibliography_title, ||"missing".into());
@@ -892,6 +905,8 @@ impl PMDSerializer for PMDPDFSerializer {
             Ok(format!("(MISSING CITATION)").to_string())
         }
     }
+
+
     fn convert_note(&mut self, id: &String) -> Result<String> {
         Ok(format!("<sup><a id='{id}-backref' href='#^{id}'>{id}</a></sup>"))
     }
