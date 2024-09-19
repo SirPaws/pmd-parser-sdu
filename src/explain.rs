@@ -21,7 +21,7 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
         println!("    italics               *italics text here*");
         println!("    hover                 %[base text](hovered text)");
         println!("    style                 £{{css_style: here;}}(text)");
-        println!("    link                  [https://link.here](link text)");
+        println!("    link                  [link text](https://link.here)");
         println!("    citation              [£some-citation]");
     };
     
@@ -230,7 +230,7 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
                 println!("Links:");
                 println!();
                 println!("Example: ");
-                println!("    [https://link.goes.here](text goes here)");
+                println!("    [text goes here](https://link.goes.here)");
                 println!();
                 println!("Note: ");
                 println!();
