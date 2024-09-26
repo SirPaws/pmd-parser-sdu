@@ -1,3 +1,4 @@
+#![feature(ptr_as_ref_unchecked)]
 #![feature(let_chains)]
 #![feature(box_into_inner)]
 #![feature(string_remove_matches)]
@@ -5,15 +6,20 @@
 use std::{collections::HashMap, fs};
 use anyhow::{Context, Result};
 
+#[cfg(feature = "wasm")]
+use wasm_bindgen::prelude::*;
+
 mod frontmatter;
 mod structured_base_parser;
 mod references;
-mod contact;
 mod explain;
 mod toplevel;
+#[macro_use]
 mod paws_markdown;
 mod pmd_serializer;
 mod config;
+mod pdf;
+mod ordered_map;
 #[cfg(feature = "text")]
 mod pmd_pure_text;
 #[cfg(feature = "html")]
@@ -22,6 +28,10 @@ mod pmd_html;
 mod pmd_rss;
 #[cfg(feature = "pdf")]
 mod pmd_pdf;
+#[cfg(feature = "wasm")]
+mod pmd_wasm;
+#[cfg(any(feature = "wasm", feature = "html", feature = "rss", feature = "pdf"))]
+mod pmd_html_shared;
 
 use frontmatter::*;
 use references::*;
@@ -40,12 +50,34 @@ use pmd_pdf::*;
 
 /////////////////////////////////////////////////////////////////////////////////////////////
 
+#[cfg(not(feature = "wasm"))]
 fn main() -> Result<()> {
     execute()
 }
 
+#[cfg(feature = "wasm")]
+use pmd_wasm::PMDWASMSerializer;
+
+#[cfg(feature = "wasm")]
+#[wasm_bindgen]
+pub fn generate_output(source: &str, pdf: bool) -> std::result::Result<JsValue, wasm_bindgen::JsError> {
+    let result = parse(&source.to_string(), None).map_err(|e| JsError::from(&*e))?;
+    let html = to_string(&result, PMDWASMSerializer::new(pdf)).map_err(|e| JsError::from(&*e))?;
+    Ok(JsValue::from_str(&html))
+}
+
+#[cfg(not(feature = "wasm"))]
+macro_rules! build_executable {
+    ($($body: tt)*) => { $($body)* }
+}
+
+#[cfg(feature = "wasm")]
+macro_rules! build_executable {
+    ($($body: tt)*) => { }
+}
 
 
+build_executable!{
 use clap::{Parser, Subcommand};
 use std::path::{Path, PathBuf};
 
@@ -102,11 +134,11 @@ pub fn execute() -> Result<()> {
         #[cfg(feature = "text")]
         Commands::Paragraph { file } => {
             let result = file_parse(&file.to_str().context("expected a file")?.to_string())?;
-            let paragraph = result.body.iter().find(|&x| match x { BlogBody::Paragraph(_) => true, _ => false});
-            if let Some(BlogBody::Paragraph(content)) = paragraph {
+            let paragraph = result.body.iter().find(|(x, _)| match x { BlogBody::Paragraph(_) => true, _ => false});
+            if let Some((BlogBody::Paragraph(content), _)) = paragraph {
                 let mut serialiser = PMDPureTextSerializer::new();
                 serialiser.references = result.references.clone();
-                let text = serialiser.convert_paragraph(content)?;
+                let text = serialiser.convert_paragraph(&content, &String::new())?;
                 println!("{text}");
             } else {
             }
@@ -127,7 +159,7 @@ pub fn execute() -> Result<()> {
                 println!("outputting to file {}", out_file.to_str().expect("whatever"));
 
                 let result = file_parse(&file.to_str().context("expected a file")?.to_string())?;
-                let html   = to_string(&result, PMDHTMLSerializer::new(stem.to_str().context("converting OsStr to str")?))?;
+                let html = to_string_from_boxed(&result, PMDHTMLSerializer::new(stem.to_str().context("converting OsStr to str")?))?;
                 if out_file.exists() {
                     fs::remove_file(&out_file)?;
                 }
@@ -145,7 +177,7 @@ pub fn execute() -> Result<()> {
                 println!("outputting to file {}", out_file.to_str().expect("whatever"));
 
                 let result = file_parse(&file.to_str().context("expected a file")?.to_string())?;
-                let html   = to_string(&result, PMDPDFSerializer::new(stem.as_str()))?;
+                let html   = to_string_from_boxed(&result, PMDPDFSerializer::new(stem.as_str()))?;
                 if out_file.exists() {
                     fs::remove_file(&out_file)?;
                 }
@@ -301,6 +333,8 @@ pub fn execute() -> Result<()> {
         }
     }
     Ok(())
+}
+
 }
 
 

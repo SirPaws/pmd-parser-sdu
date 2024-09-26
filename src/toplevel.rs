@@ -1,30 +1,23 @@
 
-use crate::*;
+use config::DEFAULT_FACTBOX_TITLE;
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum PDFLocation {
-    Left, Center, Right
-}
+use crate::*;
 
 #[derive(Debug, PartialEq)]
 pub enum TopLevelSyntax {
     FrontMatter(Frontmatter),
-//  LastUpdateDate(PmdDate),
-//  Banner(String),
     CodeBlock(String),
     Header(String, usize),
     Image(String, String),
     List(Vec<String>),
     Paragraph(String),
     Quote(Vec<String>),
-//  Subtitle(String),
-//  Title(String),
     ReferenceDefinition(ReferenceDefinition),
     NoteDefinition{id: String, text: String},
     TOC(String),
+    PageBreak,
+    FactBox{title: String, body: Vec<TopLevelSyntax>},
 //  EmbeddedLink(String, String)
-//  NotesTitle(String),
-//  BibliographyTitle(String),
 }
 
 fn next_line(text: &str) -> &str {
@@ -206,6 +199,32 @@ impl ParseObject {
     }
 }
 
+pub fn find_end_balanced(text: &str, delimiters: (char, char)) -> Option<usize> {
+
+    let mut found_one = false;
+    let mut character_count = 0;
+    let mut delim_count: usize = 0;
+    for character in text.chars() {
+        if character == delimiters.0 {
+            delim_count = delim_count + 1;
+        }
+        else if character == delimiters.1 {
+            if delim_count == 0 {
+                found_one = true;
+                break; 
+            }
+            delim_count = delim_count - 1;
+        }
+        character_count = character_count + 1;
+    }
+
+    if found_one {
+        Some(character_count)
+    } else {
+        None
+    }
+}
+
 pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
     // let matter = Matter::<YAML>::new();
     let (frontmatter, content) = parse_frontmatter(&file_content);
@@ -264,6 +283,23 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             continue;
         }
 
+        if current.starts_with("---") && current.ends_with("---") {
+
+            let mut is_line_break = true;
+            for character in current.chars() {
+                if character.is_whitespace() { continue; }
+                if character != '-' {
+                    is_line_break = false;
+                    break;
+                }
+            }
+            if is_line_break {
+                object.push(TopLevelSyntax::PageBreak);
+                content = next_line(&content[current.len()..]).into();
+                continue;
+            }
+        }
+
         if current.starts_with('-') {
             let mut list = Vec::<String>::new();
 
@@ -290,55 +326,6 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             content = next_line(&content[last + 6..]).into();
             continue;
         }
-
-        // if let Some(n) = is_meta(current, "title") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::Title(text));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
-        // 
-        // if let Some(n) = is_meta(current, "subtitle") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::Subtitle(text));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
-        // 
-        // if let Some(n) = is_meta(current, "banner") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::Banner(text));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
-        // 
-        // if let Some(n) = is_meta(current, "last-update") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::LastUpdateDate(PmdDate::String(text)));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
-        // 
-        // if let Some(n) = is_meta(current, "last-updated") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::LastUpdateDate(PmdDate::String(text)));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
-        // 
-        // if let Some(n) = is_meta(current, "notes-title") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::NotesTitle(text));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
-        // 
-        // if let Some(n) = is_meta(current, "bibliography-title") {
-        //     let text: String = current[n..].trim_start().into();
-        //     toplevel_syntax.push(TopLevelSyntax::BibliographyTitle(text));
-        //     content = next_line(&content[current.len()..]).into();
-        //     continue;
-        // }
         
         if let Some(n) = is_meta(current, "toc") {
             let text: String = current[n..].trim_start().into();
@@ -378,6 +365,32 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
         if let Some((note_id, note_text)) = try_parse_note(current) {
             object.push(TopLevelSyntax::NoteDefinition { id: note_id, text: note_text });
             content = next_line(&content[current.len()..]).into();
+            continue;
+        }
+
+        if current.starts_with("[[fact]") || current.starts_with("[[factbox]") {
+            let len = if current.starts_with("[[fact]") { "[[fact]".len() } else { "[[factbox]".len() };
+            let last = find_end_balanced(&content[len..], ('[', ']')).context("expected a fact box but couldn't find the end")?;
+
+            let mut text_to_parse = String::new();
+            let text = &content[len..last + len];
+            let title = text.lines().take(1).nth(0);
+            for line in text.lines().skip(1) {
+                let trimmed = line.trim_start();
+                text_to_parse += trimmed;
+                text_to_parse.push('\n');
+            }
+
+            let body = toplevel_parse(&text_to_parse)?;
+
+            let title = if let Some(text) = title && !text.trim().is_empty() {
+                text
+            } else {  
+                DEFAULT_FACTBOX_TITLE
+            }.to_string();
+            
+            object.push(TopLevelSyntax::FactBox{title, body});
+            content = next_line(&content[last + len + 1..]).into();
             continue;
         }
 

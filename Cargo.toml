@@ -4,24 +4,52 @@ version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+name = "pmdlib"
+crate-type = ["cdylib"]
+path = "src/main.rs"
+default-features = false
+requires-features = ["wasm"]
+
+[[bin]]
+name = "pmd-parser"
+default = true
+
 
 [features]
 default = ["html", "rss", "text"]
-html = []
-pdf  = ["dep:headless_chrome"]
+html = ["exe"]
+pdf  = ["mock_pdf"]
+# pdf  = ["dep:headless_chrome"]
 text = []
-rss  = []
+rss  = ["exe"]
+wasm = ["dep:wasm-bindgen", "text"]
+mock_pdf = []
+exe  = ["dep:clap", "dep:color-print", "dep:reqwest", "dep:tempfile", "dep:tokio"]
+
+# anyhow
+# chrono
+# regex
+# serde
+# serde_json
+# serde_yaml
+
 
 [dependencies]
 anyhow = "1.0.70"
 chrono = "0.4.24"
-clap = { version = "4.2.1", features = ["derive"] }
-color-print = "0.3.5"
+clap = { version = "4.2.1", features = ["derive"], optional = true }
+color-print = { version = "0.3.5", optional = true }
 headless_chrome = { version = "1.0.9", optional = true }
-regex = "1.10.3"
-reqwest = "0.12.7"
+# regex = "1.10.3"
+reqwest = { version = "0.12.7", optional = true }
 serde = { version = "1.0.159", features = ["derive"] }
 serde_json = "1.0.95"
 serde_yaml = "0.9.34"
-tempfile = "3.10.1"
-tokio = { version = "1.39.3", features = ["full"] }
+tempfile = { version = "3.10.1", optional = true }
+tokio = { version = "1.39.3", features = ["full"], optional = true }
+wasm-bindgen = { version = "0.2.93", optional = true }
+
+
+
+

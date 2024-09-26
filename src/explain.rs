@@ -28,8 +28,9 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
     if let Some(feature) = feature {
         match feature.to_lowercase().as_str() {
             "frontmatter" => {
-                if let Some(extra) = extra {
+                if let Some(_) = extra {
                     unimplemented!();
+                    /*
                     match extra.to_lowercase().as_str() {
                         "title" => {},
                         "subtitle" => {},
@@ -68,6 +69,7 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
                         "pdf-footer-right" => {},
                         _ => {}
                     }
+                    */
 
                 } else {
                     println!("Frontmatter:");
@@ -236,8 +238,9 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
                 println!();
             },
             "reference" | "references" | "citation" | "citations" => {
-                if let Some(extra) = extra {
+                if let Some(_) = extra {
                     unimplemented!();
+                    /*
                     match extra.to_lowercase().as_str() {
                         "title" => {},
                         "description" => {},
@@ -267,6 +270,7 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
                         "translators" => {},
                         _ => {}
                     }
+                    */
                 } else {
                     println!("References:");
                     println!();

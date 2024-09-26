@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, collections::{BTreeMap, HashMap}, ops::{Index, IndexMut}};
+use std::{collections::{btree_map::Keys, BTreeMap}, ops::Index};
 
 use serde_yaml::{value::TaggedValue, Mapping, Value};
 
@@ -20,6 +20,23 @@ impl Frontmatter {
     pub fn has<S: AsRef<str>>(&self, key: S) -> bool {
         self.data.contains_key(key.as_ref())
     }
+
+    pub fn keys(&self) -> Keys<'_, String, Value> {
+        self.data.keys()
+    }
+/*
+    pub fn values(&self) -> Values<'_, String, Value>{
+        self.data.values()
+    }
+    
+    pub fn values_mut(&mut self) -> ValuesMut<'_, String, Value> {
+        self.data.values_mut()
+    }
+
+    pub fn clear(&mut self) {
+        self.data.clear()
+    }
+*/
 }
 
 impl PartialEq for Frontmatter {
@@ -27,10 +44,6 @@ impl PartialEq for Frontmatter {
         self.text == other.text &&
             self.data == other.data
     }
-}
-
-pub struct FrontmatterValue {
-    value: Value
 }
 
 pub trait FrontmatterHelper {

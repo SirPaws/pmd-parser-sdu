@@ -1,6 +1,7 @@
 use chrono::{DateTime, TimeZone, Utc};
 
 use anyhow::{anyhow, Context, Result};
+#[cfg(not(feature = "wasm"))]
 use color_print::cprintln;
 
 use crate::structured_base_parser::{peek_next_token, eat_token, parse_value};
@@ -184,6 +185,7 @@ impl PmdDate {
         let month = maybe_month.unwrap_or(Month::January);
         let day   = maybe_day.unwrap_or(1);
 
+        #[cfg(not(feature = "wasm"))]
         cprintln!("<cyan>debug:</> got date {} {:?} {}", year, month, day);
 
         let month = month.to_chrono_month().number_from_month();

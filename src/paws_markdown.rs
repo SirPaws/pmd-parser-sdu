@@ -1,17 +1,21 @@
-use color_print::cprintln;
-use contact::ContactDefinition;
-use serde_yaml::Value;
-// use gray_matter::Pod;
+use std::collections::HashSet;
 
+#[cfg(not(feature = "wasm"))]
+use color_print::cprintln;
+use config::*;
+use ordered_map::OrderedMap;
 use crate::*;
-use crate::config::{DEFAULT_URL, DEFAULT_DATA_DIR, DEFAULT_BLOG_DIR};
+
+macro_rules! no_id {
+    ($e: expr) => { ($e, &String::new()) }
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct TableOfContent {
     pub title:   String,
     pub index:   usize,
     pub max_depth: usize,
-    pub headers: Vec<(Box<BlogBody>, usize)>,
+    pub headers: Vec<(Box<BlogBody>, /*depth: */ usize, /*id: */ String)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -24,6 +28,9 @@ pub struct BlogHeader {
     pub blog_dir: String,
     pub date_written: PmdDate,
     pub last_update: PmdDate,
+    pub hide_references: bool,
+    pub hide_notes: bool,
+    pub hide_contacts: bool,
     pub toc: Option<TableOfContent>,
     pub bibliography_title: String,
     pub notes_title: String,
@@ -31,7 +38,7 @@ pub struct BlogHeader {
 }
 
 impl BlogHeader {
-    fn default() -> Self {
+    pub fn default() -> Self {
         Self {
             title: "".into(),
             subtitle: "".into(),
@@ -42,8 +49,11 @@ impl BlogHeader {
             date_written: PmdDate::None,
             last_update: PmdDate::None,
             toc:      None,
-            bibliography_title: "References".into(),
-            notes_title: "Notes".into(),
+            hide_references: false,
+            hide_notes: false,
+            hide_contacts: false,
+            bibliography_title: DEFAULT_BIBLIOGRAPHY_TITLE.into(),
+            notes_title: DEFAULT_NOTES_TITLE.into(),
             frontmatter: None,
         }
     }
@@ -72,6 +82,7 @@ pub enum BlogBody {
     CodeBlock(String),
     Image(String, String),
     // EmbeddedLink(String, String),
+    FactBox(FactBox),
     Quote(Vec<BlogBody>),
     List(Vec<BlogBody>),
     Paragraph(Box<BlogBody>),
@@ -79,22 +90,68 @@ pub enum BlogBody {
     Span(Span),
     Citation(String),
     Note(String),
+    PageBreak,
     TOCLocationMarker,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct PawsMarkdown {
     pub header: BlogHeader,
-    pub references: HashMap<String, ReferenceDefinition>,
-    pub notes: HashMap::<String, BlogBody>,
-    pub body  : Vec<BlogBody>
+    pub bibliography_id: String,
+    pub notes_id: String,
+    pub references: OrderedMap<String, ReferenceDefinition>,
+    pub notes: OrderedMap<String, BlogBody>,
+    pub body: Vec<(BlogBody, String)>,
 }
 
-pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
+#[derive(Debug, PartialEq, Clone)]
+pub struct FactBox {
+    pub title: String,
+    pub notes: OrderedMap::<String, (BlogBody, String)>,
+    pub body: Vec<(BlogBody, String)>
+}
+
+fn gather_link<'l>(mut end: std::iter::Peekable<std::str::Chars<'l>>, depth: &mut i32) -> Result<(String, std::iter::Peekable<std::str::Chars<'l>>)> {
+    let mut alt = String::new();
+    if end.peek() == Some(&'(') {
+        end.next();
+        while !(end.peek() == Some(&')') && depth == &0) {
+            let character = end.next().context("expected ')'")?;
+            match character {
+                '(' => *depth += 1,
+                ')' => if depth != &0 { *depth -= 1 } else {},
+                _   => {}
+            }
+            alt.push(character);
+        }
+        end.next();
+        Ok((alt, end.clone()))
+    }
+    else {
+        Ok((alt, end.clone()))
+    }
+}
+
+fn get_citation(text: &String) -> Option<BlogBody> {
+    if text.starts_with('£') && text.trim_start().chars().nth(1).is_some_and(|x| x.is_alphabetic() || x == '-') {
+        // this is a citation
+        let citation : String = text.chars().skip(1).collect();
+        Some(BlogBody::Citation(citation))
+    } else if text.starts_with('^') && text.len() > 1 {
+        // this is a citation
+        let citation : String = text.chars().skip(1).collect();
+        Some(BlogBody::Note(citation))
+    } else {
+        None
+    }
+}
+
+pub fn text_parse(text: &String) -> Result<(Box<BlogBody>, String)> {
 
     let mut body = Vec::<BlogBody>::new();
     let mut buffer = String::new();
     let mut peekable = text.chars().peekable();
+    let mut tmp_id = String::new();
     while let Some(character) = peekable.peek() {
         match character {
             '\\' => {
@@ -105,17 +162,21 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                     match escaped_character {
                         '%'|'£' => { 
                             buffer.push(escaped_character);
+                            tmp_id.push(escaped_character);
                             if copy.peek().is_some_and(|&possible_brace| possible_brace == '[') {
                                 peekable.next();
                                 buffer.push('[');
+                                tmp_id.push(escaped_character);
                             }
                         },
                         _ => {
                             buffer.push(escaped_character);
+                            tmp_id.push(escaped_character);
                         }
                     }
                 } else {
                     buffer.push('\\');
+                    tmp_id.push('\\');
                 }
             },
             '£'|'%' => {
@@ -125,15 +186,19 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                 }
 
                 let start_char = *character;
-                let make_object = |base: &String, alt: &String|
+                let mut make_object = |base: &String, alt: &String|
                     anyhow::Ok(if start_char == '%' { 
-                        BlogBody::Hoverable(
-                            Alternative{base: text_parse(base)?, alt: text_parse(alt)?}
-                        )
+                        let (base, id) = text_parse(base)?;
+                        let (alt, _) = text_parse(alt)?;
+                        tmp_id += id.as_str();
+                        BlogBody::Hoverable(Alternative{base, alt})
                     } else {
-                        BlogBody::Styled(
-                            Alternative{base: text_parse(base)?, alt: text_parse(alt)?}
-                        )
+                        let (base, _) = text_parse(base)?;
+                        let (alt,  id) = text_parse(alt)?;
+                        tmp_id.push(' ');
+                        tmp_id += id.as_str();
+                        tmp_id.push(' ');
+                        BlogBody::Styled(Alternative{base, alt})
                     });
                 
                 let search_begin_char = if start_char == '%' { '[' } else { '{' };
@@ -176,6 +241,7 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                         })?);
                 } else {
                     buffer.push(start_char);
+                    tmp_id.push(start_char);
                 }
                 continue;
             },
@@ -220,28 +286,22 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                 }
 
                 end.next();
-                let mut alt = String::new();
-                // this is unreadable
-                body.push(BlogBody::Link(Alternative{base: text_parse(&base)?, 
-                    alt: text_parse(if end.peek() == Some(&'(') {
-                        end.next();
-                        while !(end.peek() == Some(&')') && depth == 0) {
-                            let character = end.next().context("expected ')'")?;
-                            match character {
-                                '(' => depth += 1,
-                                ')' => if depth != 0 { depth -= 1 } else {},
-                                _   => {}
-                            }
-                            alt.push(character);
-                        }
-                        end.next();
-                        peekable = end.clone();
-                        &alt
-                    }
-                    else {
-                        peekable = end.clone();
-                        &alt
-                    })?}));
+                let alt;
+                (alt, peekable) = gather_link(end, &mut depth)?;
+                if let Some(element) = get_citation(&alt) {
+                    let (base, _) = text_parse(&base)?;
+                    body.push(BlogBody::Link(
+                        Alternative { base, alt: Box::new(element) }
+                    ))
+                } else {
+                    let (base, id) = text_parse(&base)?;
+                    let (alt, _) = text_parse(&alt)?;
+                    tmp_id.push(' ');
+                    tmp_id += id.as_str();
+                    tmp_id.push(' ');
+
+                    body.push(BlogBody::Link(Alternative{ base, alt}))
+                }
                 continue;
             },
             '`' => {
@@ -259,6 +319,10 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                 }
                 end.next();
                 peekable = end.clone();
+
+                tmp_id.push(' ');
+                tmp_id += base.as_str();
+                tmp_id.push(' ');
                 body.push(BlogBody::InlineCode(base));
                 continue;
             },
@@ -289,7 +353,9 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                     if peekable.peek() == Some(&'*') {
                         peekable.next();
                     }
-                    body.push(BlogBody::Bold(text_parse(&result)?))
+                    let (text, id) = text_parse(&result)?;
+                    tmp_id += id.as_str();
+                    body.push(BlogBody::Bold(text))
                 } else {
                     let mut result = String::new();
                     while peekable.peek() != Some(&'*') {
@@ -299,12 +365,17 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
                     if peekable.peek() == Some(&'*') {
                         peekable.next();
                     }
-                    body.push(BlogBody::Italics(text_parse(&result)?))
+                    let (text, id) = text_parse(&result)?;
+                    tmp_id += id.as_str();
+                    body.push(BlogBody::Italics(text))
                 }
                 continue;
                 
             },
-            _   => { buffer.push(*character); },
+            _   => {
+                buffer.push(*character); 
+                tmp_id.push(*character); 
+            },
         }
 
         peekable.next();
@@ -314,11 +385,35 @@ pub fn text_parse(text: &String) -> Result<Box<BlogBody>> {
         body.push(BlogBody::Text(buffer));
     }
 
+    let id = generate_id(&tmp_id);
+
     match body.len() {
-        0 => Ok(Box::new(BlogBody::Span(Span{elements: vec![]}))),
-        1 => Ok(Box::new(body[0].clone())),
-        _ => Ok(Box::new(BlogBody::Span(Span{elements: body}))),
+        0 => Ok((Box::new(BlogBody::Span(Span{elements: vec![]})), String::new())),
+        1 => Ok((Box::new(body[0].clone()), id.unwrap_or(String::new()))),
+        _ => Ok((Box::new(BlogBody::Span(Span{elements: body})), id.unwrap_or(String::new()))),
     }
+}
+
+fn generate_id(text: &String) -> Option<String> {
+    if text.split_whitespace().collect::<String>().is_empty() {
+        None
+    } else {
+        let words = text.split_whitespace().collect::<Vec<_>>();
+        let mut id = String::new();
+        for word in words {
+            if id.len() + word.len() > MAX_ID_LENGTH {
+                break;
+            }
+            id += word;
+            id.push('-');
+        }
+        id.remove(id.len() - 1);
+        Some(id)
+    }
+}
+
+fn is_valid_id(text: &String) -> bool {
+    !text.split_whitespace().collect::<String>().is_empty()
 }
 
 fn get_url(data: &Frontmatter) -> Option<String> {
@@ -361,6 +456,18 @@ fn get_blog_dir(data: &Frontmatter) -> Option<String> {
     } else {
         None
     }
+}
+
+fn check_frontmatter(fm: &Frontmatter, keys: &[&str]) -> bool {
+    for checked_key in keys {
+        for key in fm.keys() {
+            let key = key.trim().replace('_', "-").replace(' ', "-");
+            if &key == checked_key {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn get_date(data: &Frontmatter) -> Option<String> {
@@ -419,76 +526,240 @@ fn get_bibliography_title(data: &Frontmatter) -> Option<String> {
     }
 }
 
-pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
-    let toplevel_syntax = toplevel_parse_file(file_path)?; 
+fn parse_factbox(toplevel_syntax: &Vec<TopLevelSyntax>) -> Result<PawsMarkdown> {
+    let mut notes      = OrderedMap::<String, BlogBody>::new();
+    let mut references = OrderedMap::<String, ReferenceDefinition>::new();
+    let header: BlogHeader = BlogHeader::default();
+    let mut body = Vec::<(BlogBody, String)>::new();
+    
+    let mut ids = HashSet::<String>::new();
+    let mut num_codeblocks = 0usize;
+    let mut num_image = 0usize;
+    let mut num_lists = 0usize;
+    let mut num_quotes = 0usize;
 
-    let mut notes      = HashMap::<String, BlogBody>::new();
-    let mut references = HashMap::<String, ReferenceDefinition>::new();
-    let mut header: BlogHeader = BlogHeader::default();
-    let mut body = Vec::<BlogBody>::new();
-    for elem in &toplevel_syntax {
+    for elem in toplevel_syntax {
+        let last_length = body.len();
         match elem {
-            TopLevelSyntax::FrontMatter(frontmatter) => { // (data)   => {
-                header.frontmatter = Some(frontmatter.clone());
-                // println!("FRONTMATTER!!! {:?}", data);
-            }
-            // TopLevelSyntax::LastUpdateDate(date) => { header.date = date.clone(); },
-            // TopLevelSyntax::Subtitle(text)      => { header.subtitle = text.to_string();                                },
-            // TopLevelSyntax::Title(text)         => { header.title    = text.to_string();                                },
-            // TopLevelSyntax::Banner(text)        => { header.banner   = text.to_string();                                },
-            TopLevelSyntax::CodeBlock(block)    => { body.push(BlogBody::CodeBlock(block.to_string()));            },
-            TopLevelSyntax::Image(img, alt)     => { body.push(BlogBody::Image(img.to_string(), alt.to_string())); },
-            // TopLevelSyntax::EmbeddedLink(img, alt) => { body.push(BlogBody::EmbeddedLink(img.to_string(), alt.to_string())); },
-            TopLevelSyntax::Header(text, level) => { body.push(BlogBody::Header(text_parse(&text)?, *level));      },
-            TopLevelSyntax::List(list)          => {
-                let mut result = Vec::<BlogBody>::new();
-                for elem in list {
-                    result.push(Box::into_inner(text_parse(&elem)?))
-                }
-                body.push(BlogBody::List(result));
-            }
-            TopLevelSyntax::Paragraph(text)     => { body.push(BlogBody::Paragraph(text_parse(&text)?));           },
-            TopLevelSyntax::Quote(list)         => { 
-                let mut result = Vec::<BlogBody>::new();
-                for elem in list {
-                    result.push(Box::into_inner(text_parse(&elem)?))
-                }
-                body.push(BlogBody::Quote(result));
+            TopLevelSyntax::FactBox{title: _, body: _} => {
+                #[cfg(not(feature = "wasm"))]
+                cprintln!("<r>error:</> fact boxes inside of fact boxes is not allowed");
             },
-            TopLevelSyntax::ReferenceDefinition(reference) => { references.insert(reference.id.clone(), reference.clone()); },
-            TopLevelSyntax::NoteDefinition { id, text } => {
-                notes.insert(id.clone(), Box::into_inner(text_parse(&text)?));
+            TopLevelSyntax::FrontMatter(_) => { // (data)   => {
+                #[cfg(not(feature = "wasm"))]
+                cprintln!("<r>error:</> frontmatter inside of fact boxes is not allowed");
             }
+            TopLevelSyntax::PageBreak => {
+                body.push((BlogBody::PageBreak, String::new()));
+            },
+            TopLevelSyntax::CodeBlock(block) => { 
+                body.push((
+                        BlogBody::CodeBlock(block.to_string()),
+                        if num_codeblocks == 0 {
+                            format!("codeblock")
+                        } else {
+                            format!("codeblock-{num_codeblocks}")
+                        }
+                ));
+                num_codeblocks = num_codeblocks + 1;
+            },
+            TopLevelSyntax::Image(img, alt) => {
+                let id = generate_id(alt);
+                body.push((
+                        BlogBody::Image(img.to_string(), alt.to_string()),
+                        id.unwrap_or(format!("image-{num_image}"))
+                ));
+                num_image = num_image + 1;
+            },
+            // TopLevelSyntax::EmbeddedLink(img, alt) => { body.push(BlogBody::EmbeddedLink(img.to_string(), alt.to_string())); },
+            TopLevelSyntax::Header(text, level) => { 
+                let (object, id) = text_parse(&text)?;
+                body.push((BlogBody::Header(object, *level), id));
+            },
+            TopLevelSyntax::List(list) => {
+                let mut result = Vec::<BlogBody>::new();
+                for elem in list {
+                    let (object, _) = text_parse(&elem)?;
+                    result.push(Box::into_inner(object))
+                }
+                body.push((BlogBody::List(result), format!("list-{num_lists}")));
+                num_lists = num_lists + 1;
+            },
+            TopLevelSyntax::Paragraph(text) => {
+                let (object, id) = text_parse(&text)?;
+                body.push((BlogBody::Paragraph(object), id));
+            },
+            TopLevelSyntax::Quote(list) => { 
+                let mut result = Vec::<BlogBody>::new();
+                for elem in list {
+                    let (object, _) = text_parse(&elem)?;
+                    result.push(Box::into_inner(object));
+                }
+                body.push((BlogBody::Quote(result), format!("quote-{num_quotes}")));
+                num_quotes = num_quotes + 1;
+            },
+            TopLevelSyntax::ReferenceDefinition(reference) => {
+                references.insert(reference.id.clone(), reference.clone());
+            },
+            TopLevelSyntax::NoteDefinition { id, text } => {
+                let (object, _) = text_parse(&text)?;
+                notes.insert(id.clone(), Box::into_inner(object));
+            }
+            TopLevelSyntax::TOC(_) => {
+                #[cfg(not(feature = "wasm"))]
+                cprintln!("<r>error:</> table of contents inside of fact boxes is not allowed");
+            },
+        };
+
+        if body.len() != last_length {
+            if let Some((_, id)) = body.last_mut() {
+                if is_valid_id(id) {
+                    while ids.contains(id) {
+                        *id += format!("-{last_length}").as_str();
+                    }
+                    ids.insert(id.clone());
+                }
+            }
+        }
+    }
+
+        Ok(PawsMarkdown { header, references, notes, body, notes_id: String::new(), bibliography_id: String::new() })
+}
+
+pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
+    parse(&fs::read_to_string(file_path)?, Some(file_path))
+}
+
+pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMarkdown> {
+    let toplevel_syntax = toplevel_parse(file_content)?;
+
+    let mut notes      = OrderedMap::<String, BlogBody>::new();
+    let mut references = OrderedMap::<String, ReferenceDefinition>::new();
+    let mut header: BlogHeader = BlogHeader::default();
+    let mut body = Vec::<(BlogBody, String)>::new();
+
+    let mut ids = HashSet::<String>::new();
+    let mut num_codeblocks = 0usize;
+    let mut num_image = 0usize;
+    let mut num_lists = 0usize;
+    let mut num_quotes = 0usize;
+    let mut num_factboxes = 0usize;
+
+    for elem in &toplevel_syntax {
+        let last_length = body.len();
+        match elem {
+            TopLevelSyntax::FactBox{ title, body: syntax} => {
+                // Should return a Factbox object
+                let factbox_parsed = parse_factbox(syntax)?;
+                let mut factbox = FactBox {
+                    title: title.clone(),
+                    notes: OrderedMap::new(),
+                    body: factbox_parsed.body,
+                };
+
+                if !factbox_parsed.references.is_empty() {
+                    for (key, def) in &factbox_parsed.references {
+                        references.insert(key.clone(), def.clone());
+                    }
+                }
+                let id = if let Some(id) = generate_id(title) { id } else { format!("factbox-{num_factboxes}") };
+                for (_, object_id) in &mut factbox.body {
+                    if is_valid_id(object_id) {
+                        *object_id = format!("{id}-{object_id}");
+                        while ids.contains(object_id) {
+                            *object_id += format!("-{last_length}").as_str();
+                        }
+                        ids.insert(id.clone());
+                    }
+                }
+
+                for (key, elem) in &factbox_parsed.notes {
+                    factbox.notes.insert(key.clone(), (elem.clone(), format!("{id}-{key}")))
+                }
+
+                body.push((
+                        BlogBody::FactBox(factbox), 
+                        id
+                ));
+                num_factboxes = num_factboxes + 1;
+            },
+            TopLevelSyntax::PageBreak => {
+                body.push((BlogBody::PageBreak, String::new()));
+            },
+            TopLevelSyntax::FrontMatter(frontmatter) => {
+                header.frontmatter = Some(frontmatter.clone());
+            }
+            TopLevelSyntax::CodeBlock(block) => {
+                body.push((
+                        BlogBody::CodeBlock(block.to_string()),
+                        if num_codeblocks == 0 {
+                            format!("codeblock")
+                        } else {
+                            format!("codeblock-{num_codeblocks}")
+                        }
+                ));
+                num_codeblocks = num_codeblocks + 1;
+            },
+            TopLevelSyntax::Image(img, alt) => {
+                let id = generate_id(alt);
+                body.push((
+                        BlogBody::Image(img.to_string(), alt.to_string()),
+                        id.unwrap_or(format!("image-{num_image}"))
+                ));
+                num_image = num_image + 1;
+            },
+            // TopLevelSyntax::EmbeddedLink(img, alt) => { body.push(BlogBody::EmbeddedLink(img.to_string(), alt.to_string())); },
+            TopLevelSyntax::Header(text, level) => {
+                let (object, id) = text_parse(&text)?;
+                body.push((BlogBody::Header(object, *level), id));
+            },
+            TopLevelSyntax::List(list) => {
+                let mut result = Vec::<BlogBody>::new();
+                for elem in list {
+                    let (object, _) = text_parse(&elem)?;
+                    result.push(Box::into_inner(object))
+                }
+                body.push((BlogBody::List(result), format!("list-{num_lists}")));
+                num_lists = num_lists + 1;
+            },
+            TopLevelSyntax::Paragraph(text) => {
+                let (object, id) = text_parse(&text)?;
+                body.push((BlogBody::Paragraph(object), id));
+            },
+            TopLevelSyntax::Quote(list) => { 
+                let mut result = Vec::<BlogBody>::new();
+                for elem in list {
+                    let (object, _) = text_parse(&elem)?;
+                    result.push(Box::into_inner(object));
+                }
+                body.push((BlogBody::Quote(result), format!("quote-{num_quotes}")));
+                num_quotes = num_quotes + 1;
+            },
+            TopLevelSyntax::ReferenceDefinition(reference) => {
+                references.insert(reference.id.clone(), reference.clone());
+            },
+            TopLevelSyntax::NoteDefinition { id, text } => {
+                let (object, _) = text_parse(&text)?;
+                notes.insert(id.clone(), Box::into_inner(object));
+            }
+ 
             TopLevelSyntax::TOC(title) => {
                 if header.toc.is_none() {
                     header.toc = Some(TableOfContent{ title: title.clone(), index: body.len(), headers: vec![], max_depth: 1,});
-                    body.push(BlogBody::TOCLocationMarker);
+                    body.push((BlogBody::TOCLocationMarker, String::new()));
                 }
             },
-            // TopLevelSyntax::NotesTitle(title) => { header.notes_title = title.clone(); },
-            // TopLevelSyntax::BibliographyTitle(title) => { header.bibliography_title = title.clone() },
-        };
-    }
+        }
 
-    if header.toc.is_some() {
-        let toc = header.toc.as_mut().unwrap();
-        for (i, item) in body.iter().enumerate() {
-            if i < toc.index { continue; }
-            if let &BlogBody::Header(text, depth) = &item {
-                if depth > &toc.max_depth {
-                    toc.max_depth = *depth;
+        if body.len() != last_length {
+            if let Some((_, id)) = body.last_mut() {
+                if is_valid_id(id) {
+                    while ids.contains(id) {
+                        *id += format!("-{last_length}").as_str();
+                    }
+                    ids.insert(id.clone());
                 }
-                toc.headers.push((text.clone(), depth.clone()));
             }
-        }
-
-        if notes.len() > 0 {
-            toc.headers.push((Box::new(BlogBody::Text(header.notes_title.clone())), 1))
-        }
-
-
-        if references.len() > 0 {
-            toc.headers.push((Box::new(BlogBody::Text(header.bibliography_title.clone())), 1))
         }
     }
 
@@ -496,7 +767,10 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
         if let Some(title) = frontmatter["title"].as_string() {
             header.title = title;
         } else {
-            cprintln!("<r>error:</> Document '{}' is missing a title, see 'pmd explain frontmatter'", file_path);
+            if let Some(file_path) = file_path {
+                #[cfg(not(feature = "wasm"))]
+                cprintln!("<r>error:</> Document '{}' is missing a title, see 'pmd explain frontmatter'", file_path);
+            }
         }
         
         if let Some(subtitle) = frontmatter["subtitle"].as_string() {
@@ -518,7 +792,10 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
         if let Some(date) = get_date(frontmatter) {
             header.date_written = PmdDate::String(date);
         } else {
-            cprintln!("<r>error:</> Document '{}' is missing a date, see 'pmd explain frontmatter'", file_path);
+            if let Some(file_path) = file_path {
+                #[cfg(not(feature = "wasm"))]
+                cprintln!("<r>error:</> Document '{}' is missing a date, see 'pmd explain frontmatter'", file_path);
+            }
         }
         
         if let Some(update) = get_last_update(frontmatter) {
@@ -534,11 +811,100 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
         if let Some(blog_dir) = get_blog_dir(frontmatter) {
             header.blog_dir = blog_dir;
         }
+
+        header.hide_notes      = check_frontmatter(frontmatter, &FRONTMATTER_HIDE_NOTES);
+        header.hide_references = check_frontmatter(frontmatter, &FRONTMATTER_HIDE_REFERENCES);
+        header.hide_contacts   = check_frontmatter(frontmatter, &FRONTMATTER_HIDE_CONTACTS);
     } else {
-        cprintln!("<r>error:</> Document '{}' is missing frontmatter, see 'pmd explain frontmatter'", file_path);
+        //TODO(Paw): this should really be a warning
+        if let Some(file_path) = file_path {
+            #[cfg(not(feature = "wasm"))]
+            cprintln!("<r>error:</> Document '{}' is missing frontmatter, see 'pmd explain frontmatter'", file_path);
+        }
     }
 
-    Ok(PawsMarkdown { header, references, notes, body })
+    let notes_id     = if let Some(id) = generate_id(&header.notes_title) { id } else {
+        let default_id = generate_id(&DEFAULT_NOTES_TITLE.to_string()).unwrap();
+        default_id
+    };
+    let bibliography_id = if let Some(id) = generate_id(&header.bibliography_title) { id } else {
+        let default_id = generate_id(&DEFAULT_BIBLIOGRAPHY_TITLE.to_string()).unwrap();
+        default_id
+    };
+
+    if !notes.is_empty() {
+        if ids.contains(&notes_id) {
+            'outer: for (elem, id) in &mut body.iter_mut() {
+                if let BlogBody::FactBox(factbox) = elem {
+                    for (_, factbox_id) in &mut factbox.body {
+                        if factbox_id != &notes_id { continue }
+        
+                        while ids.contains(factbox_id) {
+                            *factbox_id = format!("{factbox_id}-disass");
+                        }
+                        break 'outer;
+                    }
+                }
+                if id != &notes_id { continue }
+                while ids.contains(id) {
+                    *id = format!("{id}-disass");
+                }
+        
+                break;
+            }
+        }
+    }
+    
+    if !references.is_empty() {
+        if ids.contains(&bibliography_id) {
+            'outer: for (elem, id) in &mut body.iter_mut() {
+                if let BlogBody::FactBox(factbox) = elem {
+                    for (_, factbox_id) in &mut factbox.body {
+                        if factbox_id != &bibliography_id { continue }
+        
+                        while ids.contains(factbox_id) {
+                            *factbox_id = format!("{factbox_id}-disass");
+                        }
+                        break 'outer;
+                    }
+                }
+                if id != &bibliography_id { continue }
+                while ids.contains(id) {
+                    *id = format!("{id}-disass");
+                }
+        
+                break;
+            }
+        }
+    }
+    
+    if let Some(toc) = header.toc.as_mut() {
+        for (i, (item, id)) in body.iter().enumerate() {
+            if i < toc.index { continue; }
+            if let &BlogBody::Header(text, depth) = &item {
+                if depth > &toc.max_depth {
+                    toc.max_depth = *depth;
+                }
+                toc.headers.push((text.clone(), depth.clone(), id.clone()));
+            }
+            else if let &BlogBody::FactBox(_) = &item {
+                if 2 > toc.max_depth {
+                    toc.max_depth = 2;
+                }
+                toc.headers.push((Box::new(item.clone()), 2, id.clone()));
+            }
+        }
+
+        if !notes.is_empty() {
+            toc.headers.push((Box::new(BlogBody::Text(header.notes_title.clone())), 1, notes_id.clone()))
+        }
+
+        if !references.is_empty() {
+            toc.headers.push((Box::new(BlogBody::Text(header.bibliography_title.clone())), 1, bibliography_id.clone()))
+        }
+    }
+
+    Ok(PawsMarkdown { header, references, notes_id, bibliography_id, notes, body })
 }
 
 
@@ -551,7 +917,7 @@ mod tests {
         let text: String = "\\[]".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Text("[]".into()));
     }
     
@@ -560,7 +926,7 @@ mod tests {
         let text: String = "\\%[]".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Text("%[]".into()));
     }
     
@@ -569,7 +935,7 @@ mod tests {
         let text: String = "%[abc](def)".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Hoverable(Alternative{ base: Box::new(BlogBody::Text("abc".into())), alt: Box::new(BlogBody::Text("def".into()))}));
     }
     
@@ -578,7 +944,7 @@ mod tests {
         let text: String = "£{abc}(def)".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Styled(Alternative{ base: Box::new(BlogBody::Text("abc".into())), alt: Box::new(BlogBody::Text("def".into()))}));
     }
     
@@ -587,7 +953,7 @@ mod tests {
         let text: String = "%[£{style}(text)](alternative)".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Hoverable(Alternative{ 
             base: Box::new(BlogBody::Styled(
                 Alternative {
@@ -604,7 +970,7 @@ mod tests {
         let text: String = "%[base](£{style}(text))".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Hoverable(Alternative{ 
             base: Box::new(BlogBody::Text("base".into())),
             alt: Box::new(BlogBody::Styled(
@@ -621,7 +987,7 @@ mod tests {
         let text: String = "[abc](def)".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Link(Alternative{ base: Box::new(BlogBody::Text("abc".into())), alt: Box::new(BlogBody::Text("def".into()))}));
     }
     
@@ -630,7 +996,7 @@ mod tests {
         let text: String = "[link](£{style}(text))".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Link(Alternative{ 
             base: Box::new(BlogBody::Text("link".into())),
             alt: Box::new(BlogBody::Styled(
@@ -647,7 +1013,7 @@ mod tests {
         let text: String = "`here's some code`".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::InlineCode("here's some code".into()))
     }
 
@@ -656,7 +1022,7 @@ mod tests {
         let text: String = "*italics*".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Italics(Box::new(BlogBody::Text("italics".into()))))
     }
     
@@ -665,7 +1031,7 @@ mod tests {
         let text: String = "**bold**".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Bold(Box::new(BlogBody::Text("bold".into()))))
     }
     
@@ -674,7 +1040,7 @@ mod tests {
         let text: String = "***italics and bold***".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Bold(
             Box::new(BlogBody::Italics(
                 Box::new(BlogBody::Text("italics and bold".into()))
@@ -687,7 +1053,7 @@ mod tests {
         let text: String = "**bold*italics*bold**".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Bold(
             Box::new(BlogBody::Span(Span{ elements:
                 vec![ 
@@ -706,7 +1072,7 @@ mod tests {
         let text: String = "[^0]".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Note("0".into()))
     }
 
@@ -715,7 +1081,7 @@ mod tests {
         let text: String = "[£example]".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Citation("example".into()))
     }
     
@@ -724,7 +1090,7 @@ mod tests {
         let text: String = "[£-other-example]".into();
         let result = text_parse(&text);
         assert!(result.is_ok());
-        let inner = Box::into_inner(result.unwrap());
+        let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Citation("-other-example".into()))
     }
     

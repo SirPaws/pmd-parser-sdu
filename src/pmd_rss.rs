@@ -1,3 +1,5 @@
+use color_print::cprintln;
+use pmd_html_shared::sanitize_text;
 use crate::*;
 
 #[derive(Clone)]
@@ -51,15 +53,24 @@ impl PMDRSSSerializer {
 }
 
 impl PMDSerializer for PMDRSSSerializer {
+    fn current_factbox(&mut self) -> Option<(FactBox, Option<String>)> {
+        None
+    }
+
+    fn convert_factbox(&mut self, _: &FactBox, _: &String) -> Result<String> {
+        cprintln!("<r>error:</> fact boxes aren't implemented for html output");
+        Ok("".into())
+    }
+
     fn convert_hoverable(&mut self, hoverable: &Alternative) -> Result<String> {
-        let base = self.convert_element(&hoverable.base)?;
-        let alt  = self.convert_element(&hoverable.alt)?;
+        let base = self.convert_element(no_id!(&hoverable.base))?;
+        let alt  = self.convert_element(no_id!(&hoverable.alt))?;
         Ok(format!("<span><span>{base}</span><span>({alt})</span></span>"))
     }
 
     fn convert_styled(&mut self, styled: &Alternative) -> Result<String> {
-        let text  = self.convert_element(&styled.alt)?;
-        // let style = self.convert_element(&styled.base)?;
+        let text  = self.convert_element(no_id!(&styled.alt))?;
+        // let style = self.convert_element(no_id!(&styled.base))?;
         Ok(format!("<span>{text}</span>"))
     }
 
@@ -68,84 +79,83 @@ impl PMDSerializer for PMDRSSSerializer {
     // }
 
     fn convert_link(&mut self, link: &Alternative) -> Result<String> {
-        let href = self.convert_element(&link.alt)?;
-        let text = self.convert_element(&link.base)?;
+        let href = self.convert_element(no_id!(&link.alt))?;
+        let text = self.convert_element(no_id!(&link.base))?;
         Ok(format!("<a class='inline-link' href='{href}'>{text}</a>"))
     }
 
-    fn convert_header(&mut self, text: &Box<BlogBody>, depth: usize) -> Result<String> {
-        let text  = self.convert_element(text)?;
+    fn convert_header(&mut self, text: &Box<BlogBody>, depth: usize, _: &String) -> Result<String> {
+        let text  = self.convert_element(no_id!(text))?;
         Ok(format!("<h{depth}>{text}</h{depth}>"))
     }
 
     fn convert_italics(&mut self, text: &Box<BlogBody>) -> Result<String> {
-        let inner_text = self.convert_element(&text)?;
+        let inner_text = self.convert_element(no_id!(&text))?;
         Ok(format!("<i>{inner_text}</i>)"))
     }
 
     fn convert_bold(&mut self, text: &Box<BlogBody>) -> Result<String> {
-        let inner_text = self.convert_element(&text)?;
+        let inner_text = self.convert_element(no_id!(&text))?;
         Ok(format!("<b>{inner_text}</b>"))
     }
 
     fn convert_inlinecode(&mut self, text: &String) -> Result<String> {
+        let text = sanitize_text(text);
         Ok(format!("<code>{text}</code>"))
     }
 
-    fn convert_codeblock(&mut self, text: &String) -> Result<String> {
+    fn convert_codeblock(&mut self, text: &String, _: &String) -> Result<String> {
         let first_line = text.lines().nth(0).context("expected at least one line in codeblock")?;
         let mut words = first_line.split(|x: char| x.is_whitespace());
         let _lang = words.nth(0).unwrap_or("plaintext");
         let mut body = text[text.find('\n').context("expected at least one line in codeblock")? + 1..].to_string();
 
-        body = body.replace("&", "&amp;")
-                   .replace("<", "&lt;")
-                   .replace(">", "&gt;");
+        body = sanitize_text(&body);
         body = body.trim_end().replace("\r\n", "\n");
 
         Ok(format!("<pre><code>{body}</code></pre>"))
     }
 
-    fn convert_image(&mut self, src: &String, alt: &String) -> Result<String> {
+    fn convert_image(&mut self, src: &String, alt: &String, _: &String) -> Result<String> {
         Ok(format!("<img src='{src}' alt='{alt}'></img>"))
     }
 
-    fn convert_quote(&mut self, lines: &Vec<BlogBody>) -> Result<String> {
+    fn convert_quote(&mut self, lines: &Vec<BlogBody>, _: &String) -> Result<String> {
         let mut quote_elements : Vec<String> = vec![];
         for elem in lines {
-            let text = self.convert_element(elem)?;
+            let text = self.convert_element(no_id!(elem))?;
             quote_elements.push(format!("{text}<br/>"));
         }
         let text = quote_elements.join("\n");
         Ok(format!("<blockquote class='quote-text'>{text}</blockquote>"))
     }
 
-    fn convert_list(&mut self, list: &Vec<BlogBody>) -> Result<String> {
+    fn convert_list(&mut self, list: &Vec<BlogBody>, _: &String) -> Result<String> {
         let mut list_elements: Vec<String> = vec![];
         for elem in list {
-            let text = self.convert_element(elem)?;
+            let text = self.convert_element(no_id!(elem))?;
             list_elements.push(format!("<li>{text}</li>"));
         }
         let text = list_elements.join("\n");
         Ok(format!("<ul>{text}</ul>"))
     }
 
-    fn convert_paragraph(&mut self, text: &Box<BlogBody>) -> Result<String> {
-        let paragraph = self.convert_element(text)?;
+    fn convert_paragraph(&mut self, text: &Box<BlogBody>, _: &String) -> Result<String> {
+        let paragraph = self.convert_element(no_id!(text))?;
         Ok(format!("<p>{paragraph}</p>"))
     }
 
     fn convert_text(&mut self, text: &String) -> Result<String> {
-        Ok(text.trim_end().to_string())
+        Ok(sanitize_text(&text).trim_end().to_string())
     }
 
     fn convert_span(&mut self, span: &Span) -> Result<String> {
         let mut result = String::new();
         for elem in &span.elements {
             result += if let BlogBody::Text(text) = elem {
-                text.to_string()
+                sanitize_text(text)
             } else {
-                self.convert_element(elem)?
+                self.convert_element(no_id!(elem))?
             }.as_str()
         }
         Ok(result)
@@ -162,9 +172,28 @@ impl PMDSerializer for PMDRSSSerializer {
     fn convert_note(&mut self, id: &String) -> Result<String> {
         Ok(format!("<sup><a id='{id}-backref' href='#^{id}'>{id}</sup></a>"))
     }
+    
+    fn convert_factbox_note(&mut self, _: &FactBox, _: Option<&String>, _: &String) -> Result<String> {
+        cprintln!("<r>error:</> fact boxes aren't implemented for rss output");
+        Ok("".into())
+    }
 
     fn convert_toc(&mut self) -> Result<String> {
         todo!()
+    }
+    
+    fn convert_page_break(&mut self) -> Result<String> {
+        let mut result = self.tab();
+
+        result += format!("<section class='page-break'>\n").as_str();
+        self.push_tab();
+            result += self.tab().as_str();
+            result += "<hr>\n";
+        self.pop_tab();
+        result += self.tab().as_str();
+        result += format!("</section>\n").as_str();
+
+        Ok(result)
     }
 
     fn convert(&mut self, md: &PawsMarkdown) -> Result<String> {
@@ -181,7 +210,7 @@ impl PMDSerializer for PMDRSSSerializer {
                 md.header.date_written.to_date().unwrap_or(chrono::Utc::now())
             }.to_rfc3339();
         let url = &md.header.url;
-        let data_dir = &md.header.data_dir;
+        // let data_dir = &md.header.data_dir;
         let blog_dir = &md.header.blog_dir;
 
         self.push_line("<entry>\n");
@@ -193,15 +222,15 @@ impl PMDSerializer for PMDRSSSerializer {
         self.push_line("<content type=\"xhtml\">");
 
         self.push_tab();
-        for element in &md.body {
-            let result = self.convert_element(element)?;
+        for (element, id) in &md.body {
+            let result = self.convert_element((element, id))?;
             self.push_line(result.trim_end());
         }
 
         if md.notes.len() != 0 {
             self.push_line("<hr>");
             for (key, val) in &md.notes {
-                let result = self.convert_element(val)?;
+                let result = self.convert_element(no_id!(val))?;
                 self.push_line("<p>");
                 self.push_tab();
                         self.push_line(format!("<sup>^{key}:</sup>{result}"));
