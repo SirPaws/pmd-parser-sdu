@@ -1,3 +1,4 @@
+use contact::ContactDefinition;
 use ordered_map::OrderedMap;
 use pmd_html_shared::{ObjectKind, PMDSharedHTMLSerializer, Reference, PMDHTML};
 use crate::*;
@@ -5,10 +6,12 @@ use crate::*;
 pub struct PMDHTMLSerializer { 
     pub common: PMDHTML<PMDHTMLSerializer>,
     header: BlogHeader,
+    contacts: OrderedMap<String, Reference<ContactDefinition>>,
     references: OrderedMap<String, Reference<ReferenceDefinition>>,
     notes: OrderedMap<String, Reference<BlogBody>>,
     notes_id: String,
     bibliography_id: String,
+    contacts_id: String,
 /*
     quote_id:   usize,
     list_id :   usize,
@@ -30,6 +33,10 @@ impl PMDSharedHTMLSerializer for PMDHTMLSerializer {
 
     fn bibliography_id(&mut self) -> String {
         self.bibliography_id.clone()
+    }
+
+    fn contacts_id(&mut self) -> String {
+        self.contacts_id.clone()
     }
 
     fn get_description(&mut self, md: &PawsMarkdown) -> Result<String> {
@@ -149,6 +156,19 @@ impl PMDSharedHTMLSerializer for PMDHTMLSerializer {
     fn get_mut_reference<T: AsRef<str>>(&mut self, key: T) -> Option<&mut Reference<ReferenceDefinition>> {
         self.references.get_mut(key.as_ref())
     }
+    
+    fn contacts(&mut self) -> &OrderedMap<String, Reference<ContactDefinition>> {
+        &self.contacts
+    }
+    fn mut_contacts(&mut self) -> &mut OrderedMap<String, Reference<ContactDefinition>> {
+        &mut self.contacts
+    }
+    fn get_mut_contact<T: AsRef<str>>(&mut self, key: T) -> Option<&mut Reference<ContactDefinition>> {
+        self.contacts.get_mut(key.as_ref())
+    }
+    fn get_contact<T: AsRef<str>>(&mut self, key: T) -> Option<&Reference<ContactDefinition>> {
+        self.contacts.get(key.as_ref())
+    }
 }
 
 impl PMDHTMLSerializer {
@@ -156,10 +176,12 @@ impl PMDHTMLSerializer {
         let mut value = Box::new(Self {
             common: PMDHTML::uninit(),
             header: BlogHeader::default(),
+            contacts:  OrderedMap::new(),
             references: OrderedMap::new(),
             notes: OrderedMap::new(),
             notes_id: String::new(),
             bibliography_id: String::new(),
+            contacts_id: String::new(),
         });
         value.common = PMDHTML::new(filename, &mut *value);
         value
@@ -171,7 +193,7 @@ impl PMDHTMLSerializer {
 
         format!("<a class='{class}' href='#{id}' aria-hidden='true'>{text}</a>")
     }
-
+    
     fn prepare_navbar(&mut self) -> Result<String> {
         let mut output = String::new();
         
@@ -260,18 +282,23 @@ impl PMDSerializer for PMDHTMLSerializer {
         self.header = md.header.clone();
         self.notes_id = md.notes_id.clone();
         self.bibliography_id = md.bibliography_id.clone();
-        
+        self.contacts_id = md.contacts_id.clone();
+
         for (id, reference) in &md.references {
             self.references.insert(id.clone(), Reference::new(reference.clone()));
+        }
+        
+        for (id, contact) in &md.contacts {
+            self.contacts.insert(id.clone(), Reference::new(contact.clone()));
         }
         
         for (id, note) in &md.notes {
             self.notes.insert(id.clone(), Reference::new(note.clone()));
         }
 
-        self.common.html(md, Some(&navbar), &md.references, &md.notes)
+        self.common.html(md, Some(&navbar), &md.references, &md.notes, &md.contacts)
     }
-    
+
     fn convert_factbox(&mut self, factbox: &FactBox, id: &String) -> Result<String> {
         self.common.convert_factbox(factbox, id)
     }
@@ -389,7 +416,7 @@ impl PMDSerializer for PMDHTMLSerializer {
         Ok(output)
     }
     */
-
+    
     fn convert_hoverable(&mut self, hoverable: &Alternative) -> Result<String> {
         // let base = self.convert_element(&hoverable.base)?;
         // let alt  = self.convert_element(&hoverable.alt)?;
@@ -421,6 +448,14 @@ impl PMDSerializer for PMDHTMLSerializer {
                     Ok(format!("<cite style='color=red; background-color: yellow'>{text}</cite>"))
                 }
             }, 
+            box BlogBody::ContactCitation(contact) => {
+                if let Some(contact) = convert_custom_citation(self.contacts.get_mut(contact.as_str()) , &contact, &text, self.header.hide_contacts) {
+                    Ok(contact)
+                } else {
+                    cprintln!("<y>warning:</> {} has no source", contact);
+                    Ok(format!("<span style=\"color: red; background-color: yellow\">(MISSING CONTACT)</span>").to_string())
+                }
+            },
             box BlogBody::Note(note) => {
                 if self.header.hide_notes {
                     Ok("".into())
@@ -646,6 +681,10 @@ impl PMDSerializer for PMDHTMLSerializer {
         */
     }
     
+    fn convert_contact_citation(&mut self, id: &String) -> Result<String> {
+        self.common.convert_contact_citation(id)
+    }
+
     fn convert_citation(&mut self, id: &String) -> Result<String> {
         self.common.convert_citation(id)
         /*

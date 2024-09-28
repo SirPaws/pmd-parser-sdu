@@ -136,6 +136,10 @@ impl PMDSerializer for PMDPureTextSerializer {
         }
     }
     
+    fn convert_contact_citation(&mut self, _: &String) -> Result<String> {
+        Ok("".into())
+    }
+
     fn convert_note(&mut self, id: &String) -> Result<String> {
         if !self.hide_notes {
             Ok(format!("^{id}").to_string())
@@ -232,6 +236,76 @@ impl PMDSerializer for PMDPureTextSerializer {
             for (key, val) in &md.notes {
                 let result = self.convert_element(no_id!(val))?;
                 output += format!("    ^{key}: {result}\n").as_str();
+            }
+            output.push('\n');
+        }
+        
+        if !(md.contacts.is_empty() || self.hide_contacts) {
+            output += "--------------------------------------------------------------------------------\n";
+            output += format!("{}: \n", md.header.contacts_title).as_str();
+            for (_, val) in &md.contacts {
+                let name = &val.name;
+                output += format!("    {name}:\n").as_str();
+
+                if !val.phone.is_empty() {
+                    if val.phone.len() == 1 {
+                        output += format!("        tlf: {}\n", val.phone[0]).as_str();
+                    } else {
+                        output += "        tlf: (";
+                        for (i, phonenumber) in val.phone.iter().enumerate() {
+                            output += format!("{phonenumber}").as_str();
+                            if i != val.phone.len() - 1 {
+                                output += ", ";
+                            }
+                        }
+                        output += ")";
+                    }
+                }
+
+                if !val.email.is_empty() {
+                    if val.email.len() == 1 {
+                        output += format!("        email: {}\n", val.email[0]).as_str();
+                    } else {
+                        output += "        email: (";
+                        for (i, email) in val.email.iter().enumerate() {
+                            output += format!("{email}").as_str();
+                            if i != val.email.len() - 1 {
+                                output += ", ";
+                            }
+                        }
+                        output += ")";
+                    }
+                }
+
+                if !val.address.is_empty() {
+                    if val.address.len() == 1 {
+                        output += format!("        address: {}\n", val.address[0]).as_str();
+                    } else {
+                        output += "        address: (";
+                        for (i, address) in val.address.iter().enumerate() {
+                            output += format!("{address}").as_str();
+                            if i != val.address.len() - 1 {
+                                output += ", ";
+                            }
+                        }
+                        output += ")";
+                    }
+                }
+                
+                if !val.website.is_empty() {
+                    if val.website.len() == 1 {
+                        output += format!("        url: {}\n", val.website[0]).as_str();
+                    } else {
+                        output += "        url: (";
+                        for (i, website) in val.website.iter().enumerate() {
+                            output += format!("{website}").as_str();
+                            if i != val.website.len() - 1 {
+                                output += ", ";
+                            }
+                        }
+                        output += ")";
+                    }
+                }
             }
             output.push('\n');
         }

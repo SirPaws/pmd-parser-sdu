@@ -4,18 +4,7 @@ use anyhow::{Context, Result, anyhow};
 use std::ops::{Deref, DerefMut};
 
 use crate::{
-    any_non_empty, 
-    bibliograph_name, 
-    ordered_map::OrderedMap, 
-    paws_markdown::BlogBody, 
-    to_citation, 
-    Alternative, 
-    BlogHeader, 
-    FactBox, 
-    PMDSerializer, 
-    PawsMarkdown, 
-    ReferenceDefinition, 
-    Span
+    any_non_empty, bibliograph_name, contact::ContactDefinition, ordered_map::OrderedMap, paws_markdown::BlogBody, to_citation, Alternative, BlogHeader, FactBox, PMDSerializer, PawsMarkdown, ReferenceDefinition, Span
 };
 
 pub struct Reference<T> {
@@ -101,14 +90,17 @@ pub trait PMDSharedHTMLSerializer: PMDSerializer {
 
     fn notes_id(&mut self) -> String;
     fn bibliography_id(&mut self) -> String;
+    fn contacts_id(&mut self) -> String;
 
     fn references(&mut self) -> &OrderedMap<String, Reference<ReferenceDefinition>>;
-    
     fn mut_references(&mut self) -> &mut OrderedMap<String, Reference<ReferenceDefinition>>;
-    
     fn get_mut_reference<T: AsRef<str>>(&mut self, key: T) -> Option<&mut Reference<ReferenceDefinition>>;
-
     fn get_reference<T: AsRef<str>>(&mut self, key: T) -> Option<&Reference<ReferenceDefinition>>;
+    
+    fn contacts(&mut self) -> &OrderedMap<String, Reference<ContactDefinition>>;
+    fn mut_contacts(&mut self) -> &mut OrderedMap<String, Reference<ContactDefinition>>;
+    fn get_mut_contact<T: AsRef<str>>(&mut self, key: T) -> Option<&mut Reference<ContactDefinition>>;
+    fn get_contact<T: AsRef<str>>(&mut self, key: T) -> Option<&Reference<ContactDefinition>>;
 }
 
 pub struct PMDHTML<T: PMDSharedHTMLSerializer> {
@@ -188,7 +180,8 @@ impl<T: PMDSharedHTMLSerializer> PMDHTML<T> {
     }
 
     pub fn html(
-        &mut self, md: &PawsMarkdown, navbar: Option<&String>, references: &OrderedMap<String, ReferenceDefinition>, notes: &OrderedMap<String, BlogBody>) 
+        &mut self, md: &PawsMarkdown, navbar: Option<&String>,
+        references: &OrderedMap<String, ReferenceDefinition>, notes: &OrderedMap<String, BlogBody>, contacts: &OrderedMap<String, ContactDefinition>) 
         -> Result<String> 
     {
         let mut output = String::new();
@@ -312,6 +305,55 @@ impl<T: PMDSharedHTMLSerializer> PMDHTML<T> {
                     output += "</sup>";
                     output.push('\n');
             
+                self.pop_tab();
+                output += self.tab().as_str();
+                output += "</section>\n";
+            }
+        }
+
+        if !(contacts.is_empty() || blog_header.hide_contacts) {
+            let id = self.parent.contacts_id();
+            let title = &md.header.contacts_title;
+
+            output += self.tab().as_str();
+            output += format!("<section class='page-break'>\n").as_str();
+            self.push_tab();
+                output += self.tab().as_str();
+                output += "<hr>\n";
+            self.pop_tab();
+            output += self.tab().as_str();
+            output += format!("</section>\n").as_str();
+
+            output += self.tab().as_str();
+            output += format!("<section class='contacts' id='{id}'>\n").as_str();
+            self.push_tab();
+                output += self.tab().as_str();
+                output += format!("<h1>{title}</h1>\n").as_str();
+            self.pop_tab();
+            output += self.tab().as_str();
+            output += format!("</section>\n").as_str();
+
+            for (key, val) in self.parent.contacts() {
+                if val.times_used == 0 {
+                    cprintln!("<y>warning:</> contact '{}' is not mentioned in the text", key);
+                }
+            }
+            
+            for (key, contact) in contacts {
+                output += self.tab().as_str();
+                output += format!("<section class='contact' id='{key}'>\n").as_str();
+                self.push_tab();
+                    output += self.tab().as_str();
+                    output += format!("<p>\n").as_str();
+                    self.push_tab();
+                    
+                        output += to_html_contact(contact).as_str();
+                        output.push('\n');
+                    
+                    self.pop_tab();
+                    output += self.tab().as_str();
+                    output += format!("</p>\n").as_str();
+
                 self.pop_tab();
                 output += self.tab().as_str();
                 output += "</section>\n";
@@ -796,6 +838,34 @@ impl<T: PMDSharedHTMLSerializer> PMDHTML<T> {
         Ok(result)
     }
     
+    pub fn convert_contact_citation(&mut self, id: &String) -> Result<String> {
+        if let Some(reference) = self.parent.get_mut_contact(id) {
+            let num = reference.times_used;
+            reference.times_used += 1;
+            if self.parent.get_header().hide_contacts {
+                Ok("".into())
+            } else {
+                Ok(
+                    if self.parent.get_header().should_cite_contacts {
+                        let mut result = String::new();
+                        result += "<cite class='contact-citation'>";
+                        result += format!("<a id='{id}-{num}' href='#{id}' onclick='backref(\"{id}\", \"{id}-{num}\")'>").as_str();
+                        result += "<sub>?</sub>";
+                        result += "</a>";
+                        result += "</cite>";
+                        result
+                    } else {
+                        String::new()
+                    }
+                )
+            }
+        } else {
+            #[cfg(not(feature = "wasm"))]
+            cprintln!("<y>warning:</> {} has no source", id);
+            Ok(format!("<span style=\"color: red; background-color: yellow\">(MISSING CONTACT)</span>").to_string())
+        }
+    }
+    
     pub fn convert_citation(&mut self, id: &String) -> Result<String> {
         let laundered_parent = Weak::launder(&self.parent);
         if let Some(reference) = self.parent.get_mut_reference(id) {
@@ -1096,6 +1166,100 @@ pub fn to_html_bibliography(value: &ReferenceDefinition) -> String {
         if let Some(day) = date.get_day() {
             result += day.to_string().as_str();
         }
+    }
+
+    result
+}
+
+pub fn to_html_contact(contact: &ContactDefinition) -> String {
+    let mut result = String::new();
+    let name = &contact.name;
+    let phonenumbers = &contact.phone;
+    let emails = &contact.email;
+    let addresses = &contact.address;
+    let websites = &contact.website;
+
+    result += format!("<b>{name}</b>: <br>").as_str();
+    if !addresses.is_empty() {
+        result += "&ensp;address: ";
+        if addresses.len() == 1 {
+            let address = addresses[0].trim();
+            result += address
+        } else {
+            result.push('[');
+            for (i, address) in addresses.iter().enumerate() {
+                result += address;
+                if i != addresses.len() - 1 {
+                    result += "; "
+                }
+            }
+            result.push(']');
+        }
+        result += "<br>";
+    }
+
+    if !phonenumbers.is_empty() {
+        result += "&ensp;tel: ";
+        if phonenumbers.len() == 1 {
+            let phonenumber = &phonenumbers[0];
+            let mut number = phonenumber.clone();
+            number.retain(|c| !c.is_whitespace());
+            result += format!("<a href='tel:{number}'>{phonenumber}</a>").as_str();
+        } else {
+            result.push('[');
+            for (i, phonenumber) in phonenumbers.iter().enumerate() {
+                result += format!("<a href='tel:{phonenumber}'>{phonenumber}</a>").as_str();
+                if i != phonenumbers.len() - 1 {
+                    result += ", "
+                }
+            }
+            result.push(']');
+        }
+        result += "<br>";
+    }
+    
+    if !emails.is_empty() {
+        result += "&ensp;email: ";
+        if emails.len() == 1 {
+            let email = &emails[0].trim();
+            result += format!("<a href='mailto:{email}'>{email}</a>").as_str();
+        } else {
+            result.push('[');
+            for (i, email) in emails.iter().enumerate() {
+                result += format!("<a href='mailto:{email}'>{email}</a>").as_str();
+                if i != emails.len() - 1 {
+                    result += ", "
+                }
+            }
+            result.push(']');
+        }
+        result += "<br>";
+    }
+    
+    if !websites.is_empty() {
+        result  += "&ensp;url: ";
+        if websites.len() == 1 {
+            let website = websites[0].trim();
+            if website.starts_with("http") {
+                result += format!("<a href='{website}'>{website}</a>").as_str();
+            } else {
+                result += format!("<a href='https://{website}'>{website}</a>").as_str();
+            }
+        } else {
+            result.push('[');
+            for (i, website) in websites.iter().enumerate() {
+                if website.starts_with("http") {
+                    result += format!("<a href='{website}'>{website}</a>").as_str();
+                } else {
+                    result += format!("<a href='https://{website}'>{website}</a>").as_str();
+                }
+                if i != websites.len() - 1 {
+                    result += ", "
+                }
+            }
+            result.push(']');
+        }
+        result += "<br>";
     }
 
     result

@@ -1,8 +1,10 @@
 /target/**
 /out/**
-/js/**
 /css/**
+/js/**
+/.vim/**
 .todo
+*.html
 bug
 Cargo.lock
 first-blog-post.json
@@ -10,4 +12,3 @@ first-blog-post.md
 install.bat
 second.md
 *.png
-*.html

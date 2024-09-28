@@ -17,12 +17,11 @@ default = true
 
 
 [features]
-default = ["html", "rss", "text"]
+default = ["html", "pdf", "text"]
 html = ["exe"]
 pdf  = ["mock_pdf"]
 # pdf  = ["dep:headless_chrome"]
 text = []
-rss  = ["exe"]
 wasm = ["dep:wasm-bindgen", "text"]
 mock_pdf = []
 exe  = ["dep:clap", "dep:color-print", "dep:reqwest", "dep:tempfile", "dep:tokio"]

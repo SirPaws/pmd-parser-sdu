@@ -3,7 +3,7 @@
 #![feature(box_into_inner)]
 #![feature(string_remove_matches)]
 #![feature(box_patterns)]
-use std::{collections::HashMap, fs};
+use std::fs;
 use anyhow::{Context, Result};
 
 #[cfg(feature = "wasm")]
@@ -12,6 +12,7 @@ use wasm_bindgen::prelude::*;
 mod frontmatter;
 mod structured_base_parser;
 mod references;
+mod contact;
 mod explain;
 mod toplevel;
 #[macro_use]
@@ -24,13 +25,11 @@ mod ordered_map;
 mod pmd_pure_text;
 #[cfg(feature = "html")]
 mod pmd_html;
-#[cfg(feature = "rss")]
-mod pmd_rss;
 #[cfg(feature = "pdf")]
 mod pmd_pdf;
 #[cfg(feature = "wasm")]
 mod pmd_wasm;
-#[cfg(any(feature = "wasm", feature = "html", feature = "rss", feature = "pdf"))]
+#[cfg(any(feature = "wasm", feature = "html", feature = "pdf"))]
 mod pmd_html_shared;
 
 use frontmatter::*;
@@ -42,8 +41,6 @@ use pmd_serializer::*;
 use pmd_pure_text::*;
 #[cfg(feature = "html")]
 use pmd_html::*;
-#[cfg(feature = "rss")]
-use pmd_rss::*;
 #[cfg(feature = "pdf")]
 use pmd_pdf::*;
 
@@ -97,9 +94,6 @@ struct Cli {
 enum Commands {
     #[cfg(feature = "html")]
     Html {files: Vec<PathBuf> },
-
-    #[cfg(feature = "rss")]
-    Rss  {files: Vec<PathBuf> },
     
     #[cfg(feature = "text")]
     Text  {files: Vec<PathBuf> },
@@ -178,22 +172,6 @@ pub fn execute() -> Result<()> {
 
                 let result = file_parse(&file.to_str().context("expected a file")?.to_string())?;
                 let html   = to_string_from_boxed(&result, PMDPDFSerializer::new(stem.as_str()))?;
-                if out_file.exists() {
-                    fs::remove_file(&out_file)?;
-                }
-                fs::write(out_file, html)?;
-            }
-        }, 
-        #[cfg(feature = "rss")]
-        Commands::Rss{files}  => {
-            let out_dir = Path::new(dir.as_str());
-            for file in files {
-                let stem = file.as_path().file_stem().context("expected file name")?;
-                let mut out_file = out_dir.join(stem);
-                out_file.set_extension("rss");
-
-                let result = file_parse(&file.to_str().context("expected a file")?.to_string())?;
-                let html   = to_string(&result, PMDRSSSerializer::new(stem.to_str().context("converting OsStr to str")?))?;
                 if out_file.exists() {
                     fs::remove_file(&out_file)?;
                 }

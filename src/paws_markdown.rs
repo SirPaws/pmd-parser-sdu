@@ -3,6 +3,7 @@ use std::collections::HashSet;
 #[cfg(not(feature = "wasm"))]
 use color_print::cprintln;
 use config::*;
+use contact::ContactDefinition;
 use ordered_map::OrderedMap;
 use crate::*;
 
@@ -31,7 +32,9 @@ pub struct BlogHeader {
     pub hide_references: bool,
     pub hide_notes: bool,
     pub hide_contacts: bool,
+    pub should_cite_contacts: bool,
     pub toc: Option<TableOfContent>,
+    pub contacts_title: String,
     pub bibliography_title: String,
     pub notes_title: String,
     pub frontmatter: Option<Frontmatter>,
@@ -52,6 +55,8 @@ impl BlogHeader {
             hide_references: false,
             hide_notes: false,
             hide_contacts: false,
+            should_cite_contacts: false,
+            contacts_title: DEFAULT_CONTACT_TITLE.into(),
             bibliography_title: DEFAULT_BIBLIOGRAPHY_TITLE.into(),
             notes_title: DEFAULT_NOTES_TITLE.into(),
             frontmatter: None,
@@ -89,6 +94,7 @@ pub enum BlogBody {
     Text(String),
     Span(Span),
     Citation(String),
+    ContactCitation(String),
     Note(String),
     PageBreak,
     TOCLocationMarker,
@@ -99,6 +105,8 @@ pub struct PawsMarkdown {
     pub header: BlogHeader,
     pub bibliography_id: String,
     pub notes_id: String,
+    pub contacts_id: String,
+    pub contacts: OrderedMap<String, ContactDefinition>,
     pub references: OrderedMap<String, ReferenceDefinition>,
     pub notes: OrderedMap<String, BlogBody>,
     pub body: Vec<(BlogBody, String)>,
@@ -137,6 +145,10 @@ fn get_citation(text: &String) -> Option<BlogBody> {
         // this is a citation
         let citation : String = text.chars().skip(1).collect();
         Some(BlogBody::Citation(citation))
+    } else if text.starts_with('?') && text.trim_start().chars().nth(1).is_some_and(|x| x.is_alphabetic() || x == '-') {
+        // this is a citation
+        let contact : String = text.chars().skip(1).collect();
+        Some(BlogBody::ContactCitation(contact))
     } else if text.starts_with('^') && text.len() > 1 {
         // this is a citation
         let citation : String = text.chars().skip(1).collect();
@@ -275,6 +287,14 @@ pub fn text_parse(text: &String) -> Result<(Box<BlogBody>, String)> {
                     continue;
                 }
                 
+                if base.starts_with('?') && base.trim_start().chars().nth(1).is_some_and(|x| x.is_alphabetic() || x == '-') {
+                    // this is a citation
+                    let contact : String = base.chars().skip(1).collect();
+                    body.push(BlogBody::ContactCitation(contact));
+                    end.next();
+                    peekable = end.clone();
+                    continue;
+                }
                 
                 if base.starts_with('^') && base.len() > 1 {
                     // this is a citation
@@ -319,7 +339,7 @@ pub fn text_parse(text: &String) -> Result<(Box<BlogBody>, String)> {
                 }
                 end.next();
                 peekable = end.clone();
-
+                
                 tmp_id.push(' ');
                 tmp_id += base.as_str();
                 tmp_id.push(' ');
@@ -526,7 +546,26 @@ fn get_bibliography_title(data: &Frontmatter) -> Option<String> {
     }
 }
 
+fn get_contacts_title(data: &Frontmatter) -> Option<String> {
+    if let Some(title) = data["contacts-title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["contact-title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["contacts_title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["contact_title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["contacts title"].as_string() {
+        Some(title)
+    } else if let Some(title) = data["contact title"].as_string() {
+        Some(title)
+    } else {
+        None
+    }
+}
+
 fn parse_factbox(toplevel_syntax: &Vec<TopLevelSyntax>) -> Result<PawsMarkdown> {
+    let mut contacts = OrderedMap::<String, ContactDefinition>::new();
     let mut notes      = OrderedMap::<String, BlogBody>::new();
     let mut references = OrderedMap::<String, ReferenceDefinition>::new();
     let header: BlogHeader = BlogHeader::default();
@@ -598,6 +637,9 @@ fn parse_factbox(toplevel_syntax: &Vec<TopLevelSyntax>) -> Result<PawsMarkdown> 
                 body.push((BlogBody::Quote(result), format!("quote-{num_quotes}")));
                 num_quotes = num_quotes + 1;
             },
+            TopLevelSyntax::ContactDefinition(contact) => {
+                contacts.insert(contact.id.clone(), contact.clone());
+            },
             TopLevelSyntax::ReferenceDefinition(reference) => {
                 references.insert(reference.id.clone(), reference.clone());
             },
@@ -622,8 +664,17 @@ fn parse_factbox(toplevel_syntax: &Vec<TopLevelSyntax>) -> Result<PawsMarkdown> 
             }
         }
     }
-
-        Ok(PawsMarkdown { header, references, notes, body, notes_id: String::new(), bibliography_id: String::new() })
+    
+    Ok(PawsMarkdown {
+        header, 
+        references, 
+        contacts, 
+        notes, 
+        body, 
+        notes_id: String::new(), 
+        bibliography_id: String::new(),
+        contacts_id: String::new(),
+    })
 }
 
 pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
@@ -631,8 +682,9 @@ pub fn file_parse(file_path: &String) -> Result<PawsMarkdown> {
 }
 
 pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMarkdown> {
-    let toplevel_syntax = toplevel_parse(file_content)?;
+    let toplevel_syntax = toplevel_parse(file_content)?; 
 
+    let mut contacts = OrderedMap::<String, ContactDefinition>::new();
     let mut notes      = OrderedMap::<String, BlogBody>::new();
     let mut references = OrderedMap::<String, ReferenceDefinition>::new();
     let mut header: BlogHeader = BlogHeader::default();
@@ -662,6 +714,13 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
                         references.insert(key.clone(), def.clone());
                     }
                 }
+                
+                if !factbox_parsed.contacts.is_empty() {
+                    for (key, def) in &factbox_parsed.contacts {
+                        contacts.insert(key.clone(), def.clone());
+                    }
+                }
+
                 let id = if let Some(id) = generate_id(title) { id } else { format!("factbox-{num_factboxes}") };
                 for (_, object_id) in &mut factbox.body {
                     if is_valid_id(object_id) {
@@ -735,6 +794,7 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
                 body.push((BlogBody::Quote(result), format!("quote-{num_quotes}")));
                 num_quotes = num_quotes + 1;
             },
+            TopLevelSyntax::ContactDefinition(contact) => { contacts.insert(contact.id.clone(), contact.clone()); },
             TopLevelSyntax::ReferenceDefinition(reference) => {
                 references.insert(reference.id.clone(), reference.clone());
             },
@@ -749,8 +809,8 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
                     body.push((BlogBody::TOCLocationMarker, String::new()));
                 }
             },
-        }
-
+        }        
+        
         if body.len() != last_length {
             if let Some((_, id)) = body.last_mut() {
                 if is_valid_id(id) {
@@ -766,7 +826,7 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
     if let Some(frontmatter) = &header.frontmatter {
         if let Some(title) = frontmatter["title"].as_string() {
             header.title = title;
-        } else {
+        } else {            
             if let Some(file_path) = file_path {
                 #[cfg(not(feature = "wasm"))]
                 cprintln!("<r>error:</> Document '{}' is missing a title, see 'pmd explain frontmatter'", file_path);
@@ -787,6 +847,10 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
 
         if let Some(title) = get_bibliography_title(frontmatter) {
             header.bibliography_title = title;
+        }
+        
+        if let Some(title) = get_contacts_title(frontmatter) {
+            header.contacts_title = title;
         }
 
         if let Some(date) = get_date(frontmatter) {
@@ -811,10 +875,11 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
         if let Some(blog_dir) = get_blog_dir(frontmatter) {
             header.blog_dir = blog_dir;
         }
-
+        
         header.hide_notes      = check_frontmatter(frontmatter, &FRONTMATTER_HIDE_NOTES);
         header.hide_references = check_frontmatter(frontmatter, &FRONTMATTER_HIDE_REFERENCES);
         header.hide_contacts   = check_frontmatter(frontmatter, &FRONTMATTER_HIDE_CONTACTS);
+        header.should_cite_contacts = check_frontmatter(frontmatter, &FRONTMATTER_SHOULD_CITE_CONTACTS);
     } else {
         //TODO(Paw): this should really be a warning
         if let Some(file_path) = file_path {
@@ -829,6 +894,10 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
     };
     let bibliography_id = if let Some(id) = generate_id(&header.bibliography_title) { id } else {
         let default_id = generate_id(&DEFAULT_BIBLIOGRAPHY_TITLE.to_string()).unwrap();
+        default_id
+    };
+    let contacts_id = if let Some(id) = generate_id(&header.contacts_title) { id } else {
+        let default_id = generate_id(&DEFAULT_CONTACT_TITLE.to_string()).unwrap();
         default_id
     };
 
@@ -877,6 +946,29 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
             }
         }
     }
+
+    if !contacts.is_empty() {
+        if ids.contains(&contacts_id) {
+            'outer: for (elem, id) in &mut body.iter_mut() {
+                if let BlogBody::FactBox(factbox) = elem {
+                    for (_, factbox_id) in &mut factbox.body {
+                        if factbox_id != &contacts_id { continue }
+        
+                        while ids.contains(factbox_id) {
+                            *factbox_id = format!("{factbox_id}-disass");
+                        }
+                        break 'outer;
+                    }
+                }
+                if id != &contacts_id { continue }
+                while ids.contains(id) {
+                    *id = format!("{id}-disass");
+                }
+        
+                break;
+            }
+        }
+    }
     
     if let Some(toc) = header.toc.as_mut() {
         for (i, (item, id)) in body.iter().enumerate() {
@@ -904,7 +996,16 @@ pub fn parse(file_content: &String, file_path: Option<&String>) -> Result<PawsMa
         }
     }
 
-    Ok(PawsMarkdown { header, references, notes_id, bibliography_id, notes, body })
+    Ok(PawsMarkdown {
+        header,
+        references, 
+        contacts, 
+        notes_id, 
+        bibliography_id, 
+        contacts_id,
+        notes, 
+        body 
+    })
 }
 
 
@@ -1092,6 +1193,24 @@ mod tests {
         assert!(result.is_ok());
         let inner = Box::into_inner(result.unwrap().0);
         assert!(inner == BlogBody::Citation("-other-example".into()))
+    }
+    
+    #[test]
+    fn test_parse_contact_citation_alphabetic() {
+        let text: String = "[?example]".into();
+        let result = text_parse(&text);
+        assert!(result.is_ok());
+        let inner = Box::into_inner(result.unwrap());
+        assert!(inner == BlogBody::ContactCitation("example".into()))
+    }
+    
+    #[test]
+    fn test_parse_contact_citation_dash() {
+        let text: String = "[?-other-example]".into();
+        let result = text_parse(&text);
+        assert!(result.is_ok());
+        let inner = Box::into_inner(result.unwrap());
+        assert!(inner == BlogBody::ContactCitation("-other-example".into()))
     }
     
 }

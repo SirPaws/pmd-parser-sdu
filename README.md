@@ -1,8 +1,8 @@
-# Paws Markdown parser
+# Paws Markdown parser (for SDU)
 don't use this.
 
-it's a scuffed markdown parser that I use for my blog, 
-if you want some examples of what it parses go to [https://sirpaws.dev](https://sirpaws.dev) and pick a post, then replace the `POST_NAME.html` with `md/POST_NAME.md`
+this is a fork of a scuffed markdown parser that I use for my blog,
+this version specifically has some additions that I need for uni.
 
 ## PDF Frontmatter
 for all other outputs frontmatter is ignored, but it's used for pdf files to add headers, footers, line height, and base text size 

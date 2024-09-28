@@ -1,4 +1,5 @@
 use anyhow::anyhow;
+use contact::ContactDefinition;
 use ordered_map::OrderedMap;
 use pdf::build_pdf;
 use pmd_html_shared::Reference;
@@ -11,10 +12,12 @@ use serde_yaml::Value;
 pub struct PMDPDFSerializer { 
     pub common: PMDHTML<PMDPDFSerializer>,
     header: BlogHeader,
+    contacts: OrderedMap<String, Reference<ContactDefinition>>,
     references: OrderedMap<String, Reference<ReferenceDefinition>>,
     notes: OrderedMap<String, Reference<BlogBody>>,
     notes_id: String,
     bibliography_id: String,
+    contacts_id: String,
 }
 
 impl PMDSharedHTMLSerializer for PMDPDFSerializer {
@@ -32,6 +35,10 @@ impl PMDSharedHTMLSerializer for PMDPDFSerializer {
 
     fn bibliography_id(&mut self) -> String {
         self.bibliography_id.clone()
+    }
+    
+    fn contacts_id(&mut self) -> String {
+        self.contacts_id.clone()
     }
 
     fn get_description(&mut self, md: &PawsMarkdown) -> Result<String> {
@@ -109,6 +116,9 @@ impl PMDSharedHTMLSerializer for PMDPDFSerializer {
         output += "h6 {margin-top: 2em; margin-bottom: 0; font-size: 12pt; }\n";
         output += ".bibliography h1 { margin-top: auto; margin-bottom: auto; font-size: 18pt; }\n";
         output += ".notes h1 { margin-top: auto; margin-bottom: auto; font-size: 18pt; }\n";
+        output += ".contacts h1 { margin-top: auto; margin-bottom: auto; font-size: 18pt; }\n";
+        output += "\n";
+        output += ".contact-citation {margin-left: -3px; font-style: normal; font-size: small;}\n";
         output += "\n";
         if !frontmatter.has("pdf-no-first-page") {
             output += ".banner { \n";
@@ -356,6 +366,19 @@ impl PMDSharedHTMLSerializer for PMDPDFSerializer {
     fn get_reference<T: AsRef<str>>(&mut self, key: T) -> Option<&Reference<ReferenceDefinition>> {
         self.references.get(key.as_ref())
     }
+
+    fn contacts(&mut self) -> &OrderedMap<String, Reference<ContactDefinition>> {
+        &self.contacts
+    }
+    fn mut_contacts(&mut self) -> &mut OrderedMap<String, Reference<ContactDefinition>> {
+        &mut self.contacts
+    }
+    fn get_mut_contact<T: AsRef<str>>(&mut self, key: T) -> Option<&mut Reference<ContactDefinition>> {
+        self.contacts.get_mut(key.as_ref())
+    }
+    fn get_contact<T: AsRef<str>>(&mut self, key: T) -> Option<&Reference<ContactDefinition>> {
+        self.contacts.get(key.as_ref())
+    }
 }
 
 impl PMDPDFSerializer {
@@ -363,10 +386,12 @@ impl PMDPDFSerializer {
         let mut value = Box::new(Self {
             common: PMDHTML::uninit(),
             header: BlogHeader::default(),
+            contacts:  OrderedMap::new(),
             references: OrderedMap::new(),
             notes: OrderedMap::new(),
             notes_id: String::new(),
             bibliography_id: String::new(),
+            contacts_id: String::new(),
         });
         value.common = PMDHTML::new(filename, &mut *value);
         value
@@ -445,6 +470,9 @@ impl PMDPDFSerializer {
         output += "h6 {margin-top: 2em; margin-bottom: 0; font-size: 12pt; }\n";
         output += ".bibliography h1 { margin-top: auto; margin-bottom: auto; font-size: 18pt; }\n";
         output += ".notes h1 { margin-top: auto; margin-bottom: auto; font-size: 18pt; }\n";
+        output += ".contacts h1 { margin-top: auto; margin-bottom: auto; font-size: 18pt; }\n";
+        output += "\n";
+        output += ".contact-citation {margin-left: -3px; font-style: normal; font-size: small;}\n";
         output += "\n";
         if !frontmatter.has("pdf-no-first-page") {
             output += ".banner { \n";
@@ -655,7 +683,11 @@ impl PMDSerializer for PMDPDFSerializer {
             self.notes.insert(id.clone(), Reference::new(reference.clone()));
         }
 
-        let output = self.common.html(md, None, &md.references, &md.notes)?;
+        for (id, contact) in &md.contacts {
+            self.contacts.insert(id.clone(), Reference::new(contact.clone()));
+        }
+
+        let output = self.common.html(md, None, &md.references, &md.notes, &md.contacts)?;
 /*
         let paragraph = md.body.iter().find(|&x| match x { BlogBody::Paragraph(_) => true, _ => false});
         if let Some(BlogBody::Paragraph(content)) = paragraph {
@@ -799,6 +831,54 @@ impl PMDSerializer for PMDPDFSerializer {
             }
         }
         
+        if md.contacts.len() != 0 {
+            let id = PMDPDFSerializer::generate_id(&md.header.contacts_title, ||"missing".into());
+            let title = &md.header.contacts_title;
+
+            output += self.tab().as_str();
+            output += format!("<section class='page-break'>\n").as_str();
+            self.push_tab();
+                output += self.tab().as_str();
+                output += "<hr>\n";
+            self.pop_tab();
+            output += self.tab().as_str();
+            output += format!("</section>\n").as_str();
+
+            output += self.tab().as_str();
+            output += format!("<section class='contacts' id='{id}'>\n").as_str();
+            self.push_tab();
+                output += self.tab().as_str();
+                output += format!("<h1>{title}</h1>\n").as_str();
+            self.pop_tab();
+            output += self.tab().as_str();
+            output += format!("</section>\n").as_str();
+
+            for (key, val) in &self.contacts {
+                if val.times_used == 0 {
+                    cprintln!("<y>warning:</> contact '{}' is not mentioned in the text", key);
+                }
+            }
+            
+            for (key, contact) in &md.contacts {
+                output += self.tab().as_str();
+                output += format!("<section class='contact' id='{key}'>\n").as_str();
+                self.push_tab();
+                    output += self.tab().as_str();
+                    output += format!("<p>\n").as_str();
+                    self.push_tab();
+                    
+                        output += to_html_contact(contact).as_str();
+                        output.push('\n');
+                    
+                    self.pop_tab();
+                    output += self.tab().as_str();
+                    output += format!("</p>\n").as_str();
+
+                self.pop_tab();
+                output += self.tab().as_str();
+                output += "</section>\n";
+            }
+        }
 
         if md.references.len() != 0 {
             let id = PMDPDFSerializer::generate_id(&md.header.bibliography_title, ||"missing".into());
@@ -1103,6 +1183,30 @@ impl PMDSerializer for PMDPDFSerializer {
 
     fn convert_factbox_note(&mut self, factbox: &FactBox, factbox_id: Option<&String>, id: &String) -> Result<String> {
         self.common.convert_factbox_note(factbox, factbox_id, id)
+    }
+    
+    fn convert_contact_citation(&mut self, id: &String) -> Result<String> {
+        self.common.convert_contact_citation(id)
+        // if let Some(reference) = self.contacts.get_mut(id) {
+        //     let num = reference.times_used;
+        //     reference.times_used += 1;
+        //     Ok(
+        //         if self.should_cite_contacts {
+        //             let mut result = String::new();
+        //             result += "<cite class='contact-citation'>";
+        //             result += format!("<a href='#{id}'>").as_str();
+        //             result += "<sub>?</sub>";
+        //             result += "</a>";
+        //             result += "</cite>";
+        //             result
+        //         } else {
+        //             String::new()
+        //         }
+        //     )
+        // } else {
+        //     cprintln!("<y>warning:</> {} has no source", id);
+        //     Ok(format!("<span style=\"color: red; background-color: yellow\">(MISSING CONTACT)</span>").to_string())
+        // }
     }
 
     fn convert_note(&mut self, id: &String) -> Result<String> {

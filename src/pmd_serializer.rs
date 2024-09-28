@@ -22,6 +22,7 @@ pub trait PMDSerializer {
     fn convert_text(&mut self, text: &String) -> Result<String>;
     fn convert_span(&mut self, span: &Span) -> Result<String>;
     fn convert_citation(&mut self, citation: &String) -> Result<String>;
+    fn convert_contact_citation(&mut self, citation: &String) -> Result<String>;
     fn convert_note(&mut self, id: &String) -> Result<String>;
     fn convert_toc(&mut self) -> Result<String>;
     fn convert_page_break(&mut self) -> Result<String>;
@@ -51,6 +52,7 @@ pub trait PMDSerializer {
                 (BlogBody::Text(text), _)                           => result.push(self.convert_text(text)?),
                 (BlogBody::Span(span), _)                             => result.push(self.convert_span(span)?),
                 (BlogBody::Citation(text), _)                       => result.push(self.convert_citation(text)?),
+                (BlogBody::ContactCitation(text), _)                => result.push(self.convert_contact_citation(text)?),
                 (BlogBody::Note(text), _)                           => result.push(self.convert_factbox_note(factbox, factbox_id, text)?),
                 (BlogBody::TOCLocationMarker, _)                             => result.push(self.convert_toc()?),
                 (BlogBody::PageBreak, _)                                     => result.push(self.convert_page_break()?),
@@ -78,6 +80,7 @@ pub trait PMDSerializer {
             (BlogBody::Text(text), _)              => self.convert_text(text),
             (BlogBody::Span(span), _)              => self.convert_span(span),
             (BlogBody::Citation(text), _)          => self.convert_citation(text),
+            (BlogBody::ContactCitation(text), _)   => self.convert_contact_citation(text),
             (BlogBody::Note(text), _)              => {
                 if let Some((factbox, id)) = self.current_factbox() {
                     self.convert_factbox_note(&factbox, id.as_ref(), text)

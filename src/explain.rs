@@ -23,6 +23,7 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
         println!("    style                 £{{css_style: here;}}(text)");
         println!("    link                  [link text](https://link.here)");
         println!("    citation              [£some-citation]");
+        println!("    contact               [?some-contact]");
     };
     
     if let Some(feature) = feature {
@@ -236,6 +237,64 @@ pub fn explain(feature: &Option<String>, extra: &Option<String>) {
                 println!();
                 println!("Note: ");
                 println!();
+            },
+            "contact" | "contacts"  => {
+                if let Some(_) = extra {
+                    unimplemented!();
+                    /*
+                    match extra.to_lowercase().as_str() {
+                        "title" => {},
+                        "description" => {},
+                        "container-title" => {},
+                        "publisher" => {},
+                        "edition" => {},
+                        "version" => {},
+                        "issue" => {},
+                        "volume" => {},
+                        "pages" => {},
+                        "link" => {},
+                        "doi" => {},
+                        "esbn" => {},
+                        "date" => {},
+                        "day" => {},
+                        "month" => {},
+                        "year" => {},
+                        "date-retrieved" => {},
+                        "day-retrieved" => {},
+                        "month-retrieved" => {},
+                        "year-retrieved" => {},
+                        "author" => {},
+                        "authors" => {},
+                        "editor" => {},
+                        "editors" => {},
+                        "translator" => {},
+                        "translators" => {},
+                        _ => {}
+                    }
+                    */
+                } else {
+                    println!("Contacts:");
+                    println!();
+                    println!("Example: ");
+                    println!("    £hank-hill {{");
+                    println!("        name: Hank Hill,");
+                    println!("        phone: 1-800-propane,");
+                    println!("        email: hank@hill.tld,");
+                    println!("        address: \"84 Rainey St., Arlen, Heimlich County, Texas\",");
+                    println!("        website: hanklovers.tld,");
+                    println!("    }}");
+                    println!("    ");
+                    println!("    to actually cite (if it's turned on) these you type the name in a link");
+                    println!("    [?hank-hill]");
+                    println!();
+                    println!("Note: ");
+                    println!("    The program checks if the person is cited in the text even if citation is turned off");
+                    println!("    and will give a warning if a contact is never cited");
+                    println!();
+                    println!("    If a person has miltible emails, phonenumbers, addresses, or websites, you can write");
+                    println!("    them as an array, \"website: [firstsite.tld, secondsite.tld]\"");
+                    println!();
+                }
             },
             "reference" | "references" | "citation" | "citations" => {
                 if let Some(_) = extra {

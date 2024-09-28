@@ -1,5 +1,6 @@
 
 use config::DEFAULT_FACTBOX_TITLE;
+use contact::{parse_contact, ContactDefinition};
 
 use crate::*;
 
@@ -13,6 +14,7 @@ pub enum TopLevelSyntax {
     Paragraph(String),
     Quote(Vec<String>),
     ReferenceDefinition(ReferenceDefinition),
+    ContactDefinition(ContactDefinition),
     NoteDefinition{id: String, text: String},
     TOC(String),
     PageBreak,
@@ -393,7 +395,7 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             content = next_line(&content[last + len + 1..]).into();
             continue;
         }
-
+        
         if current.starts_with("[[") || current.starts_with("![[") {
             let count = if current.starts_with("[[") { 2 } else { 3 };
             let text :&str = &current[count..];
@@ -447,6 +449,14 @@ pub fn toplevel_parse(file_content: &String) -> Result<Vec<TopLevelSyntax>> {
             let end = (&content).find('}').expect("could not find the end of citation");
             let citation = parse_reference(content[0..(end+1)].to_string())?;
             object.push(TopLevelSyntax::ReferenceDefinition(citation));
+            content = content[(end + 1)..].to_string();
+            continue;
+        }
+        
+        if current.starts_with("?") && current.chars().nth(1).is_some_and(|c| return char::is_alphabetic(c) || c == '-') {
+            let end = (&content).find('}').expect("could not find the end of contact");
+            let contact = parse_contact(content[0..(end+1)].to_string())?;
+            object.push(TopLevelSyntax::ContactDefinition(contact));
             content = content[(end + 1)..].to_string();
             continue;
         }
